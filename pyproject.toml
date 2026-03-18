@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auras"
+version = "0.1.0"
+description = "auraS seizure early warning research platform"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  {name = "Team Pierogi"}
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

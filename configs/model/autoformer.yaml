@@ -1,0 +1,6 @@
+model:
+  family: autoformer
+  input_channels: 6
+  d_model: 128
+  n_heads: 4
+  dropout: 0.1

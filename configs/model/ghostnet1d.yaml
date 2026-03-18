@@ -1,0 +1,5 @@
+model:
+  family: ghostnet1d
+  input_channels: 4
+  width_mult: 1.0
+  dropout: 0.2

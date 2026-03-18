@@ -1,0 +1,8 @@
+name: chbmit
+root: data/raw/chbmit
+sampling_rate_hz: 256
+channels:
+  selected: [F7, F8, T7, T8]
+window:
+  seconds: 4
+  stride_seconds: 1

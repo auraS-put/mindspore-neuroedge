@@ -1,0 +1,11 @@
+training:
+  epochs: 30
+  batch_size: 64
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  class_weights: [1.0, 8.0]
+  early_stop_patience: 8
+
+thresholding:
+  mode: calibrated
+  target_false_alarm_rate: 0.05
