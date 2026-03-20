@@ -8,7 +8,7 @@ Two modes
 detection
     y = 1 if the window overlaps an ictal interval by at least
     ``overlap_fraction`` of the window duration, else 0.
-    (Paper 18 recommendation: overlap_fraction ≥ 0.20)
+    (Paper 18 (Mehrabi et al. — ConvSNN) recommendation: overlap_fraction ≥ 0.20)
 
 prediction
     y = 1  → window is in the preictal zone:
@@ -45,7 +45,7 @@ def label_detection(
                        ``recording``, ``onset_sec``, ``offset_sec``
     edf_stem         : EDF file stem to filter relevant seizures
     overlap_fraction : minimum fraction of window that must overlap an ictal
-                       interval to assign label 1 (Paper 18: ≥ 0.20)
+                       interval to assign label 1 (Paper 18 (Mehrabi et al. — ConvSNN): ≥ 0.20)
 
     Returns
     -------

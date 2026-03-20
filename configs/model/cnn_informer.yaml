@@ -1,0 +1,15 @@
+name: cnn_informer
+arch: cnn_informer
+
+# Architecture — CNN + Informer ProbSparse encoder (~200–400 K params, Paper 10 (Li et al. — CNN-Informer))
+d_model: 64
+n_heads: 4
+e_layers: 3
+d_ff: 256
+prob_factor: 3    # optimal sampling factor c=3 (Paper 10 (Li et al. — CNN-Informer))
+dropout: 0.1
+num_classes: 2
+
+# Best training settings (Paper 10 (Li et al. — CNN-Informer) — CNN-Informer)
+# optimizer: Adam  lr: 1.0e-4  batch: 32  epochs: 100
+# input: 4s windows @ 256 Hz = 1024 samples

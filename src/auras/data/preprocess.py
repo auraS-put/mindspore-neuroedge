@@ -3,13 +3,13 @@
 All functions operate on numpy arrays with shape (C, T) where C = channels, T = time samples.
 
 Normalization:
-  - zscore:          per-channel z-score (Paper 18)
-  - minmax_normalize: per-channel [0, 1] (Paper 20)
+  - zscore:          per-channel z-score (Paper 18 (Mehrabi et al. — ConvSNN))
+  - minmax_normalize: per-channel [0, 1] (Paper 20 (Wang Y. et al. — CAM-CNN))
 
 DWT functions (require PyWavelets ≥ 1.5):
-  - dwt_filter:    Db4 wavelet reconstruction for band-pass filtering (Paper 10)
-  - dwt_subbands:  Decompose into per-band time-domain signals (Paper 22)
-  - dwt_features:  Extract 10 statistical features × (level+1) bands × C channels (Paper 22)
+  - dwt_filter:    Db4 wavelet reconstruction for band-pass filtering (Paper 10 (Li et al. — CNN-Informer))
+  - dwt_subbands:  Decompose into per-band time-domain signals (Paper 22 (Dokare & Gupta — DWT-SVM))
+  - dwt_features:  Extract 10 statistical features × (level+1) bands × C channels (Paper 22 (Dokare & Gupta — DWT-SVM))
 
 Windowing:
   - sliding_window: overlapping window extraction
@@ -27,7 +27,7 @@ from scipy.stats import skew as scipy_skew
 # ---------------------------------------------------------------------------
 
 def zscore(x: np.ndarray, eps: float = 1e-6) -> np.ndarray:
-    """Per-channel z-score normalisation (Paper 18 — per-channel z-score).
+    """Per-channel z-score normalisation (Paper 18 (Mehrabi et al. — ConvSNN) — per-channel z-score).
 
     Parameters
     ----------
@@ -44,7 +44,7 @@ def zscore(x: np.ndarray, eps: float = 1e-6) -> np.ndarray:
 
 
 def minmax_normalize(x: np.ndarray, eps: float = 1e-8) -> np.ndarray:
-    """Per-channel min-max normalisation to [0, 1] (Paper 20 — CAM-CNN).
+    """Per-channel min-max normalisation to [0, 1] (Paper 20 (Wang Y. et al. — CAM-CNN) — CAM-CNN).
 
     Parameters
     ----------
@@ -92,7 +92,7 @@ def sliding_window(x: np.ndarray, window: int, stride: int) -> np.ndarray:
 
 def _sample_entropy(ts: np.ndarray, m: int = 2, r_factor: float = 0.2,
                     max_n: int = 256) -> float:
-    """Sample entropy — complexity measure (Paper 22, SAMPEN).
+    """Sample entropy — complexity measure (Paper 22 (Dokare & Gupta — DWT-SVM), SAMPEN).
 
     Truncates to *max_n* samples to keep O(n²) computation tractable.
     """
@@ -120,7 +120,7 @@ def _sample_entropy(ts: np.ndarray, m: int = 2, r_factor: float = 0.2,
 
 
 def _permutation_entropy(ts: np.ndarray, order: int = 3, delay: int = 1) -> float:
-    """Permutation entropy — Bandt & Pompe (2002) (Paper 22)."""
+    """Permutation entropy — Bandt & Pompe (2002) (Paper 22 (Dokare & Gupta — DWT-SVM))."""
     ts = np.asarray(ts, dtype=np.float64)
     n = len(ts)
     if n < order:
@@ -136,7 +136,7 @@ def _permutation_entropy(ts: np.ndarray, order: int = 3, delay: int = 1) -> floa
 
 
 def _shannon_entropy(ts: np.ndarray, bins: int = 32) -> float:
-    """Shannon entropy via histogram (Paper 22)."""
+    """Shannon entropy via histogram (Paper 22 (Dokare & Gupta — DWT-SVM))."""
     ts = np.asarray(ts, dtype=np.float64)
     hist, _ = np.histogram(ts, bins=bins)
     hist = hist[hist > 0].astype(np.float64)
@@ -178,7 +178,7 @@ def dwt_filter(
 ) -> np.ndarray:
     """DWT-based band-pass filter via selective coefficient reconstruction.
 
-    Implements the preprocessing from **Paper 10 (CNN-Informer)**:
+    Implements the preprocessing from **Paper 10 (Li et al. — CNN-Informer)**:
       - Db4 wavelet, 5-scale decomposition
       - Reconstruct from cD3 + cD4 + cD5 + cA5 → approximately **3–29 Hz**
         at 256 Hz native sampling rate.
@@ -187,7 +187,7 @@ def dwt_filter(
     ----------
     x                 : (C, T) float array  — raw multi-channel EEG
     wavelet           : PyWavelets wavelet name (default: 'db4')
-    level             : decomposition depth (default: 5 → Paper 10)
+    level             : decomposition depth (default: 5 → Paper 10 (Li et al. — CNN-Informer))
     reconstruct_levels: detail-coefficient levels to keep (tuple of ints).
                         At 256 Hz / level=5: (3,4,5) → cD3+cD4+cD5 ≈ 4–32 Hz.
     include_approx    : whether to include the approximation coefficients
@@ -227,7 +227,7 @@ def dwt_subbands(
 ) -> np.ndarray:
     """Decompose each channel into frequency sub-bands via DWT reconstruction.
 
-    Implements the 5-band decomposition from **Paper 22 (DWT+SVM)**:
+    Implements the 5-band decomposition from **Paper 22 (Dokare & Gupta — DWT-SVM)**:
       At 256 Hz with level=4 (Db4):
         δ  (cA4):  0–4 Hz
         θ  (cD4):  4–8 Hz
@@ -241,7 +241,7 @@ def dwt_subbands(
     ----------
     x      : (C, T) float array
     wavelet: PyWavelets wavelet name
-    level  : decomposition depth (default: 4 → Paper 22's 5 bands)
+    level  : decomposition depth (default: 4 → Paper 22 (Dokare & Gupta — DWT-SVM)'s 5 bands)
 
     Returns
     -------
@@ -278,7 +278,7 @@ def dwt_features(
 ) -> np.ndarray:
     """Extract 10 statistical features per DWT sub-band per channel.
 
-    Implements the 200-dimensional feature vector from **Paper 22 (DWT+SVM)**:
+    Implements the 200-dimensional feature vector from **Paper 22 (Dokare & Gupta — DWT-SVM)**:
       - 4 channels × (level+1=5) bands × 10 stats = **200 features**
       - Features: min, max, mean, var, std, skewness, kurtosis,
                   sample entropy, permutation entropy, Shannon entropy.
@@ -304,7 +304,7 @@ def dwt_features(
     for c_idx in range(x.shape[0]):
         coeffs = pywt.wavedec(x[c_idx].astype(np.float64), wavelet, level=level)
         # Order: [cA_level, cD_level, ..., cD1]
-        # Paper 22 order: δ first (cA4), γ last (cD1) — same as pywt default
+        # Paper 22 (Dokare & Gupta — DWT-SVM) order: δ first (cA4), γ last (cD1) — same as pywt default
         for c_arr in coeffs:
             features.extend(_band_stats(c_arr))
 

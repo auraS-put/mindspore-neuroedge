@@ -73,3 +73,22 @@ register("mobilenetv3_1d")(MobileNetV3_1D)
 register("ghostnet1d")(GhostNet1D)
 register("mobilevit_1d")(MobileViT_1D)
 register("autoformer")(Autoformer)
+
+# ── Sprint 2 architectures ────────────────────────────────────────
+from auras.models.cnn_baseline import CNNBaseline  # noqa: E402
+from auras.models.cnn_bilstm import CNNBiLSTM  # noqa: E402
+from auras.models.cnn_bilstm_attn import CNNBiLSTMAttn  # noqa: E402
+from auras.models.cam_cnn_bilstm import CAMCNNBiLSTM  # noqa: E402
+from auras.models.eegformer import EEGformer  # noqa: E402
+from auras.models.cnn_informer import CNNInformer  # noqa: E402
+from auras.models.ultralight_cnn import UltraLightCNN  # noqa: E402
+from auras.models.pyramidal_cnn_bilstm import PyramidalCNNBiLSTM  # noqa: E402
+
+register("cnn_baseline")(CNNBaseline)
+register("cnn_bilstm")(CNNBiLSTM)
+register("cnn_bilstm_attn")(CNNBiLSTMAttn)
+register("cam_cnn_bilstm")(CAMCNNBiLSTM)
+register("eegformer")(EEGformer)
+register("cnn_informer")(CNNInformer)
+register("ultralight_cnn")(UltraLightCNN)
+register("pyramidal_cnn_bilstm")(PyramidalCNNBiLSTM)

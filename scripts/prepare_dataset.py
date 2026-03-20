@@ -30,7 +30,7 @@ Preprocessing modes
 -------------------
 raw       Band-pass + notch + normalisation only (default)
 dwt       DWT Db4 band-pass filter: reconstruct cD3–cD5 + cA5 → ~3–29 Hz
-          (Paper 10 — CNN-Informer)
+          (Li et al. (CNN-Informer) — CNN-Informer)
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ def _apply_normalization(data: np.ndarray, mode: str) -> np.ndarray:
 
 
 def _apply_dwt(data: np.ndarray, cfg) -> np.ndarray:
-    """Apply DWT-based band-pass filter (Paper 10) if configured."""
+    """Apply DWT-based band-pass filter (Li et al. (CNN-Informer)) if configured."""
     dwt_cfg = cfg.preprocessing.get("dwt", None)
     if dwt_cfg is None:
         return data
@@ -123,7 +123,7 @@ def _apply_dwt(data: np.ndarray, cfg) -> np.ndarray:
     if mode == "off":
         return data
     if mode == "filter":
-        # Paper 10: Db4 level-5, keep cD3+cD4+cD5+cA5 → ~3–29 Hz
+        # Li et al. (CNN-Informer): Db4 level-5, keep cD3+cD4+cD5+cA5 → ~3–29 Hz
         wavelet = dwt_cfg.get("wavelet", "db4")
         level = dwt_cfg.get("level", 5)
         keep_levels = tuple(dwt_cfg.get("reconstruct_levels", [3, 4, 5]))

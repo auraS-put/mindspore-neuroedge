@@ -2,8 +2,8 @@
 
 Tests cover every component implemented in Sprint 1:
   1.  Preprocessing:  zscore, minmax_normalize, sliding_window
-  2.  DWT filtering:  dwt_filter (Paper 10 band-pass)
-  3.  DWT subbands:   dwt_subbands (Paper 22 5-band decomposition)
+  2.  DWT filtering:  dwt_filter (Li et al. (CNN-Informer) band-pass)
+  3.  DWT subbands:   dwt_subbands (Dokare & Gupta (DWT+SVM) 5-band decomposition)
   4.  DWT features:   dwt_features (200-dim feature vector)
   5.  CHB-MIT parser: parse_summary_file, load_all_seizures
   6.  Prediction labeling: detection mode and prediction mode
@@ -133,7 +133,7 @@ class TestSlidingWindow:
 # =============================================================================
 
 class TestDWTFilter:
-    """Tests for dwt_filter (Paper 10 band-pass)."""
+    """Tests for dwt_filter (Li et al. (CNN-Informer) band-pass)."""
 
     def setup_method(self):
         pytest.importorskip("pywt")
@@ -189,7 +189,7 @@ class TestDWTFilter:
 
 
 class TestDWTSubbands:
-    """Tests for dwt_subbands (Paper 22 5-band decomposition)."""
+    """Tests for dwt_subbands (Dokare & Gupta (DWT+SVM) 5-band decomposition)."""
 
     def setup_method(self):
         pytest.importorskip("pywt")
@@ -222,7 +222,7 @@ class TestDWTSubbands:
 # =============================================================================
 
 class TestDWTFeatures:
-    """Tests for dwt_features (Paper 22 200-dim feature vector)."""
+    """Tests for dwt_features (Dokare & Gupta (DWT+SVM) 200-dim feature vector)."""
 
     def setup_method(self):
         pytest.importorskip("pywt")
@@ -658,9 +658,9 @@ class TestIntegrationPipeline:
         x_raw = rng.standard_normal((4, 1024)).astype(np.float32)
         # Step 1: z-score per channel
         x_norm = zscore(x_raw)
-        # Step 2: DWT filter (Paper 10)
+        # Step 2: DWT filter (Li et al. (CNN-Informer))
         x_filt = dwt_filter(x_norm, level=5, reconstruct_levels=(3, 4, 5), include_approx=True)
-        # Step 3: DWT features (Paper 22)
+        # Step 3: DWT features (Dokare & Gupta (DWT+SVM))
         features = dwt_features(x_filt, level=4)
         assert features.shape == (200,)
         # Features should be mostly finite

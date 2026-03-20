@@ -1,0 +1,16 @@
+name: cnn_bilstm_attn
+arch: cnn_bilstm_attn
+
+# Architecture — DS-Conv residual stem + BiLSTM + MHSA (Paper 13 (Sikarwar et al. — Entropy-ResNet-BiLSTM); Paper 18 (Mehrabi et al. — ConvSNN); Paper 19 (El-Dajani et al. — BTE-CNN-LSTM))
+stem_channels: 64
+lstm_hidden: 64
+num_heads: 4
+mlp_ratio: 2.0
+dropout: 0.1
+num_classes: 2
+
+# Best training settings (Paper 18 (Mehrabi et al. — ConvSNN) — ConvSNN recipe)
+# optimizer: AdamW  lr: 1.0e-3  batch: 64  epochs: 100
+# lr_schedule: OneCycleLR
+# gradient_clip: 1.0
+# loss: weighted_cross_entropy + label_smoothing_0.1

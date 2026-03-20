@@ -1,0 +1,11 @@
+name: ultralight_cnn
+arch: ultralight_cnn
+
+# Architecture — Ultra-lightweight DS-CNN (<10 K params, Paper 08 (Xie et al. — TSS3D); Paper 20 (Wang Y. et al. — CAM-CNN))
+dropout: 0.1
+num_classes: 2
+
+# Best training settings (Paper 08 (Xie et al. — TSS3D) — ultra-lightweight with warmup)
+# optimizer: Adam  lr: 1.0e-3  batch: 256  epochs: 30
+# lr_schedule: warmup 2 epochs, StepLR ×0.1 at epochs 16, 24
+# post_process: EMA + delayed alarm (3 consecutive detections)

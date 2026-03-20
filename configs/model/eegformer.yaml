@@ -1,0 +1,16 @@
+name: eegformer
+arch: eegformer
+
+# Architecture — Patch Transformer (~50 K params, Paper 02 (Busia et al. — EEGformer))
+embed_dim: 128
+num_heads: 8
+patch_size: 5
+mlp_ratio: 2.0
+dropout: 0.1
+max_seq: 512
+num_classes: 2
+
+# Best training settings (Paper 02 (Busia et al. — EEGformer) — two-phase training)
+# optimizer: Adam  lr: 5.0e-4  batch: 16  epochs: 200
+# phase1: train patch_embed + pos_enc only (50 epochs)
+# phase2: full fine-tuning (150 epochs)
