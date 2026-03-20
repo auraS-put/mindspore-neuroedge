@@ -1,5 +1,0 @@
-model:
-  family: mobilenetv3_1d
-  input_channels: 4
-  variant: small
-  dropout: 0.2
