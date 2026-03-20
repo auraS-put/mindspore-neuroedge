@@ -1,25 +1,56 @@
 name: chbmit
 root: data/raw/chbmit
 processed_dir: data/processed
-sampling_rate_hz: 256          # native rate
+sampling_rate_hz: 256          # CHB-MIT native rate (already 256 Hz)
 target_rate_hz: 256
 
+# --- channel selection -------------------------------------------------------
+# CHB-MIT uses bipolar channel notation: T7 appears in pairs like F7-T7, T7-P7.
+# We request raw electrode names; channels.py maps montages correctly.
+# Papers 01, 02, 06, 07, 10, 19, 20, 22 all validate on CHB-MIT at 256 Hz.
+# Paper 22 benchmark: 4s / 1024 samples / 5-channel → 97.70% accuracy
+# Paper 01 benchmark: 4s / 1024 samples / 4-channel → 93.5% event detection
 channels:
   mode: wearable
   selected: [F7, F8, T7, T8]
+  # bipolar fallbacks if monopolar names absent in EDF montage
+  bipolar_fallback: [F7-T7, F8-T8, T7-P7, T8-P8]
   max_channels: 4
 
+# --- windowing ---------------------------------------------------------------
+# Paper 22 (primary CHB-MIT DWT+SVM baseline): 4 s = 1024 samples
+# Paper 10 (CNN-Informer, SoA on CHB-MIT): 4 s; seizure 50% overlap augmentation
+# Paper 01 (BrainFuseNet): 4 s on CHB-MIT
 window:
-  seconds: 4
-  stride_seconds: 1
+  seconds: 4                   # → 1024 samples @ 256 Hz
+  stride_seconds: 1            # → 75% overlap
 
+# --- signal preprocessing ----------------------------------------------------
+# Band-pass per Paper 22: 4th-order Butterworth low-pass 64 Hz + 60 Hz notch
+# We use 0.5–64 Hz band-pass (standard combined filter) + 60 Hz notch (US mains)
+# Normalization: z-score per channel (Paper 18)
 preprocessing:
   bandpass_low_hz: 0.5
-  bandpass_high_hz: 45.0
-  notch_hz: 60                 # US mains frequency
-  zscore: true
+  bandpass_high_hz: 64.0       # Paper 22: 64 Hz lowpass for CHB-MIT
+  notch_hz: 60                 # US power-line frequency
+  normalize: zscore
+  dwt:
+    mode: off                  # set to 'filter' to enable Paper 10 DWT band-pass
+    wavelet: db4
+    level: 5
+    reconstruct_levels: [3, 4, 5]
+    include_approx: true
+
+# --- labeling ----------------------------------------------------------------
+# Paper 10 SoA: 0.16 FDR/h — our CHB-MIT prediction target
+# Paper 22: detection mode (our CHB-MIT classical ML baseline)
+labeling:
+  mode: prediction
+  overlap_fraction: 0.20       # Paper 18 recommendation
+  sop_minutes: 15
+  sph_minutes: 5
+  postictal_gap_minutes: 15
 
 split:
   method: loso
-  test_size: 0.2
-  val_size: 0.1
+  val_fraction: 0.15

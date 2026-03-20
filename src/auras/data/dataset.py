@@ -38,8 +38,15 @@ class EEGWindowDataset:
         data = np.load(npz_path)
         self._X = data["X"]
         self._y = data["y"]
+        # subjects array added by updated prepare_dataset.py (Sprint 1)
+        self._subjects = data["subjects"] if "subjects" in data else np.zeros(len(self._y), dtype=np.int32)
         self._indices = indices if indices is not None else np.arange(len(self._y))
         self._transform = transform
+
+    @property
+    def subjects(self) -> np.ndarray:
+        """Integer subject IDs for all samples (used by LOSO splits)."""
+        return self._subjects[self._indices]
 
     def __len__(self) -> int:
         return len(self._indices)
