@@ -1,0 +1,8 @@
+name: ghostnet1d
+arch: ghostnet1d
+
+# GhostNet (Huawei Noah's Ark) adapted for 1-D signals
+width_mult: 1.0
+ghost_ratio: 2                 # ratio of ghost feature maps
+dropout: 0.2
+num_classes: 2

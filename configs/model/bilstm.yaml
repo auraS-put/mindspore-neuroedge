@@ -1,0 +1,8 @@
+name: bilstm
+arch: bilstm
+
+hidden_size: 128
+num_layers: 2
+bidirectional: true
+dropout: 0.3
+num_classes: 2

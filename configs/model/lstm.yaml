@@ -1,0 +1,8 @@
+name: lstm
+arch: lstm
+
+hidden_size: 128
+num_layers: 2
+bidirectional: false
+dropout: 0.3
+num_classes: 2

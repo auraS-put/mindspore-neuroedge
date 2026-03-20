@@ -1,0 +1,29 @@
+# Default local training configuration
+epochs: 100
+batch_size: 256
+learning_rate: 1.0e-3
+weight_decay: 1.0e-4
+optimizer: adam                  # adam | sgd | adamw
+
+scheduler:
+  name: cosine_annealing        # cosine_annealing | step | one_cycle
+  warmup_epochs: 5
+  min_lr: 1.0e-6
+
+loss:
+  name: weighted_ce             # weighted_ce | focal
+  class_weights: auto           # auto = computed from class frequencies
+  focal_gamma: 2.0              # only used when loss.name = focal
+
+early_stopping:
+  patience: 15
+  monitor: val_recall           # optimize for Recall (sensitivity)
+  mode: max
+
+checkpoint:
+  save_top_k: 3
+  monitor: val_recall
+  mode: max
+
+mixed_precision: false           # set true for Ascend 910
+num_workers: 4

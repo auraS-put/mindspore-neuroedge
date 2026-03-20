@@ -1,8 +1,25 @@
 name: chbmit
 root: data/raw/chbmit
-sampling_rate_hz: 256
+processed_dir: data/processed
+sampling_rate_hz: 256          # native rate
+target_rate_hz: 256
+
 channels:
+  mode: wearable
   selected: [F7, F8, T7, T8]
+  max_channels: 4
+
 window:
   seconds: 4
   stride_seconds: 1
+
+preprocessing:
+  bandpass_low_hz: 0.5
+  bandpass_high_hz: 45.0
+  notch_hz: 60                 # US mains frequency
+  zscore: true
+
+split:
+  method: loso
+  test_size: 0.2
+  val_size: 0.1

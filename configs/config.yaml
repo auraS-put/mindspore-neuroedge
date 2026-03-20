@@ -1,0 +1,14 @@
+# ─────────────────────────────────────────────────────────────────
+# auraS — Default top-level configuration
+# Composed from sub-configs via Hydra:
+#   python -m auras.training.trainer data=siena model=ghostnet1d training=default
+# ─────────────────────────────────────────────────────────────────
+defaults:
+  - data: siena
+  - model: ghostnet1d
+  - training: default
+  - _self_
+
+seed: 42
+project_name: auraS
+output_dir: experiments/runs
