@@ -1,11 +1,17 @@
 """Loss functions for imbalanced seizure detection.
 
-Provides Weighted Cross-Entropy and Focal Loss, both critical
-for handling the extreme class imbalance in EEG datasets.
+Provides:
+- WeightedCrossEntropyLoss: inverse-frequency class weighting
+- FocalLoss: down-weighs easy samples (Lin et al., 2017)
+- SSWCELoss: Sensitivity-Specificity Weighted CE
+  Paper 01 (Ingolfsson et al. — BrainFuseNet)
+- LabelSmoothingCE: cross-entropy with soft labels
+  Paper 18 (Mehrabi et al. — ConvSNN)
 """
 
 from __future__ import annotations
 
+import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 from mindspore import Tensor
@@ -66,6 +72,116 @@ class FocalLoss(nn.Cell):
         return loss.mean()
 
 
+class SSWCELoss(nn.Cell):
+    """Sensitivity-Specificity Weighted Cross-Entropy Loss.
+
+    Combines weighted cross-entropy with soft-confusion-matrix penalties:
+
+        Loss = WCE + α*(1 − Specificity) + β*(1 − Sensitivity)
+
+    Using differentiable (soft) estimates of TP/FP/TN/FN computed from
+    predicted probabilities rather than hard thresholded predictions.
+
+    Paper 01 (Ingolfsson et al. — BrainFuseNet): achieves best FP/h metric
+    by directly penalising both false positives (specificity term) and
+    false negatives (sensitivity term).
+
+    Parameters
+    ----------
+    alpha : float
+        Weight on the (1 − Specificity) penalty.  Default 0.5.
+    beta : float
+        Weight on the (1 − Sensitivity) penalty.  Default 0.5.
+    class_weights : Tensor, optional
+        Per-class inverse-frequency weights for the CE backbone.
+    """
+
+    def __init__(
+        self,
+        alpha: float = 0.5,
+        beta: float = 0.5,
+        class_weights: Tensor | None = None,
+    ):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.class_weights = class_weights
+        self.ce_loss = nn.SoftmaxCrossEntropyWithLogits(sparse=True, reduction="none")
+
+    def construct(self, logits: Tensor, labels: Tensor) -> Tensor:
+        # --- base cross-entropy ---
+        ce = self.ce_loss(logits, labels)
+        if self.class_weights is not None:
+            ce = (ce * self.class_weights[labels]).mean()
+        else:
+            ce = ce.mean()
+
+        # --- soft confusion matrix (differentiable) ---
+        probs = ops.softmax(logits, axis=-1)
+        p1 = probs[:, 1]                            # P(seizure), shape (B,)
+        y = labels.astype(mindspore.float32)        # 0.0 or 1.0, shape (B,)
+        not_y = 1.0 - y
+
+        tp = (p1 * y).sum()
+        fp = (p1 * not_y).sum()
+        tn = ((1.0 - p1) * not_y).sum()
+        fn = ((1.0 - p1) * y).sum()
+
+        sensitivity = tp / (tp + fn + 1e-8)
+        specificity = tn / (tn + fp + 1e-8)
+
+        return ce + self.alpha * (1.0 - specificity) + self.beta * (1.0 - sensitivity)
+
+
+class LabelSmoothingCE(nn.Cell):
+    """Cross-entropy with label smoothing to prevent over-confident predictions.
+
+    Converts hard one-hot targets to smoothed distributions:
+
+        soft_y = (1 − ε) * onehot(y) + ε / K
+
+    Paper 18 (Mehrabi et al. — ConvSNN): ε=0.1 combined with AdamW and
+    OneCycleLR yields the best holistic result on the ConvSNN architecture.
+
+    Parameters
+    ----------
+    epsilon : float
+        Smoothing factor.  0.0 → standard cross-entropy.  Default 0.1.
+    num_classes : int
+        Number of output classes.  Default 2.
+    class_weights : Tensor, optional
+        Per-class inverse-frequency weights applied after smoothing.
+    """
+
+    def __init__(
+        self,
+        epsilon: float = 0.1,
+        num_classes: int = 2,
+        class_weights: Tensor | None = None,
+    ):
+        super().__init__()
+        self.epsilon = epsilon
+        self.num_classes = num_classes
+        self.class_weights = class_weights
+        self._on = mindspore.Tensor(1.0, mindspore.float32)
+        self._off = mindspore.Tensor(0.0, mindspore.float32)
+
+    def construct(self, logits: Tensor, labels: Tensor) -> Tensor:
+        log_probs = ops.log_softmax(logits, axis=-1)        # (B, K)
+
+        # Build soft targets
+        one_hot = ops.one_hot(labels, self.num_classes, self._on, self._off)  # (B, K)
+        smooth = one_hot * (1.0 - self.epsilon) + self.epsilon / self.num_classes
+
+        # Per-sample CE: -sum(smooth * log_probs, axis=-1)
+        loss = -(smooth * log_probs).sum(axis=-1)   # (B,)
+
+        if self.class_weights is not None:
+            loss = loss * self.class_weights[labels]
+
+        return loss.mean()
+
+
 def build_loss(cfg, num_positive: int, num_negative: int):
     """Factory: build loss function from training config.
 
@@ -77,7 +193,6 @@ def build_loss(cfg, num_positive: int, num_negative: int):
     num_negative : int
         Number of non-seizure samples.
     """
-    import mindspore
     import numpy as np
 
     # Compute inverse-frequency weights
@@ -91,5 +206,12 @@ def build_loss(cfg, num_positive: int, num_negative: int):
         return WeightedCrossEntropyLoss(class_weights)
     elif name == "focal":
         return FocalLoss(gamma=cfg.loss.focal_gamma, class_weights=class_weights)
+    elif name == "sswce":
+        alpha = cfg.loss.get("sswce_alpha", 0.5)
+        beta = cfg.loss.get("sswce_beta", 0.5)
+        return SSWCELoss(alpha=alpha, beta=beta, class_weights=class_weights)
+    elif name == "label_smoothing":
+        epsilon = cfg.loss.get("label_smoothing", 0.1)
+        return LabelSmoothingCE(epsilon=epsilon, class_weights=class_weights)
     else:
         raise ValueError(f"Unknown loss: {name}")

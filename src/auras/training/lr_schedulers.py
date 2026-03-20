@@ -39,8 +39,21 @@ def build_lr_schedule(cfg, steps_per_epoch: int) -> list:
 
     lr_values = []
     for step in range(total_steps):
-        if step < warmup_steps:
-            # Linear warmup
+        if schedule_name == "one_cycle":
+            # Phase 1: linear warmup from base_lr/div_factor → base_lr
+            # Phase 2: cosine anneal from base_lr → min_lr
+            # Paper 18 (Mehrabi et al. — ConvSNN): OneCycleLR with pct_start=0.3
+            div_factor = cfg.scheduler.get("div_factor", 25)
+            pct_start = cfg.scheduler.get("pct_start", 0.3)
+            warmup_end = int(pct_start * total_steps)
+            start_lr = base_lr / div_factor
+            if step < warmup_end:
+                lr = start_lr + step * (base_lr - start_lr) / max(warmup_end, 1)
+            else:
+                progress = (step - warmup_end) / max(total_steps - warmup_end, 1)
+                lr = min_lr + 0.5 * (base_lr - min_lr) * (1 + math.cos(math.pi * progress))
+        elif step < warmup_steps:
+            # Linear warmup for other schedules
             lr = base_lr * (step + 1) / warmup_steps
         elif schedule_name == "cosine_annealing":
             progress = (step - warmup_steps) / max(total_steps - warmup_steps, 1)

@@ -1,0 +1,49 @@
+# =============================================================================
+# ConvSNN / general OneCycleLR training configuration
+# Paper 18 (Mehrabi et al. — ConvSNN):
+#   AdamW + OneCycleLR (pct_start=0.3) + gradient clip ‖g‖≤1.0
+#   label smoothing ε=0.1, batch=64, epochs=100
+#   SSWCE loss: BCE + α(1-Spec) + β(1-Sens)
+# Paper 01 (Ingolfsson et al. — BrainFuseNet):
+#   SSWCE achieves best FP/h metric
+# =============================================================================
+
+epochs: 100
+batch_size: 64
+learning_rate: 1.0e-3
+weight_decay: 1.0e-4
+optimizer: adamw
+
+gradient_clip_norm: 1.0
+
+scheduler:
+  name: one_cycle
+  pct_start: 0.3
+  div_factor: 25
+  min_lr: 1.0e-6
+
+loss:
+  name: sswce
+  class_weights: auto
+  sswce_alpha: 0.5
+  sswce_beta: 0.5
+  focal_gamma: 2.0
+  label_smoothing: 0.1
+
+sampler:
+  strategy: weighted
+  neg_to_pos_ratio: 3
+
+early_stopping:
+  patience: 15
+  monitor: val_recall
+  mode: max
+
+checkpoint:
+  save_top_k: 3
+  monitor: val_recall
+  mode: max
+
+mixed_precision: false
+num_workers: 4
+seed: 42

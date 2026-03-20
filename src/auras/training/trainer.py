@@ -102,20 +102,98 @@ def _build_datasets(cfg):
     return train_ds, val_ds, test_ds, meta
 
 
-def train(cfg):
-    """Full training pipeline."""
-    import mindspore as ms
+def _build_optimizer(model, lr_schedule, cfg):
+    """Construct optimizer from config."""
     import mindspore.nn as nn
-    from mindspore import Model
+
+    opt_name = cfg.get("optimizer", "adam")
+    wd = cfg.weight_decay
+    if opt_name == "adamw":
+        return nn.AdamWeightDecay(model.trainable_params(), learning_rate=lr_schedule, weight_decay=wd)
+    elif opt_name == "adam":
+        return nn.Adam(model.trainable_params(), learning_rate=lr_schedule, weight_decay=wd)
+    else:
+        return nn.SGD(model.trainable_params(), learning_rate=lr_schedule, weight_decay=wd, momentum=0.9)
+
+
+def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
+    """Manual training loop with gradient clipping and optional early stopping.
+
+    Uses ``mindspore.value_and_grad`` for a fully-custom per-step loop so
+    that ``nn.ClipByGlobalNorm`` can be applied before the parameter update.
+
+    Parameters
+    ----------
+    model : nn.Cell
+    loss_fn : nn.Cell
+    optimizer : nn.Optimizer
+    train_ds : MindSpore GeneratorDataset (batched)
+    cfg : training sub-config (OmegaConf)
+    val_iterator : callable, optional
+        Zero-argument callable that returns a fresh batch iterator yielding
+        ``(Tensor, Tensor)`` for validation.  Used for early stopping.
+
+    Returns
+    -------
+    best_epoch : int
+    """
+    import mindspore as ms
+    import mindspore.ops as ops
+
+    from auras.training.evaluator import evaluate_epoch
+
+    clip_norm = cfg.get("gradient_clip_norm", 1.0)
+
+    def forward_fn(data, label):
+        return loss_fn(model(data), label)
+
+    grad_fn = ms.value_and_grad(forward_fn, None, optimizer.parameters)
+
+    patience = cfg.early_stopping.patience
+    monitor_mode = cfg.early_stopping.get("mode", "max")
+    best_val = -float("inf") if monitor_mode == "max" else float("inf")
+    no_improve = 0
+    best_epoch = 0
+
+    for epoch in range(cfg.epochs):
+        model.set_train(True)
+        epoch_loss = 0.0
+        n_batches = 0
+        for X, label in train_ds.create_tuple_iterator():
+            loss, grads = grad_fn(X, label)
+            grads = ops.clip_by_global_norm(grads, clip_norm)
+            optimizer(grads)
+            epoch_loss += float(loss.asnumpy())
+            n_batches += 1
+
+        # Early stopping on validation recall
+        if val_iterator is not None:
+            result = evaluate_epoch(model, val_iterator())
+            val_recall = result.segment.recall
+            improved = val_recall > best_val if monitor_mode == "max" else val_recall < best_val
+            if improved:
+                best_val = val_recall
+                no_improve = 0
+                best_epoch = epoch + 1
+            else:
+                no_improve += 1
+            if no_improve >= patience:
+                print(f"  Early stop at epoch {epoch + 1} (best={best_val:.4f} @ epoch {best_epoch})")
+                break
+
+    return best_epoch
+
+
+def train(cfg):
+    """Full training pipeline with gradient clipping."""
+    import mindspore as ms
 
     from auras.models.factory import create_model
     from auras.training.losses import build_loss
     from auras.training.lr_schedulers import build_lr_schedule
-    from auras.training.callbacks import MetricLoggerCallback, EarlyStoppingCallback, BestCheckpointCallback
-    from auras.monitoring import wandb_logger
 
     seed_everything(cfg.seed)
-    ms.set_context(mode=ms.GRAPH_MODE)
+    ms.set_context(mode=ms.PYNATIVE_MODE)
 
     # Data
     train_ds, val_ds, test_ds, meta = _build_datasets(cfg)
@@ -130,42 +208,116 @@ def train(cfg):
     # Loss
     loss_fn = build_loss(cfg.training, meta["train_positive"], meta["train_negative"])
 
-    # LR schedule
-    steps_per_epoch = meta["train_samples"] // cfg.training.batch_size
+    # LR schedule + optimizer
+    steps_per_epoch = max(meta["train_samples"] // cfg.training.batch_size, 1)
     lr_schedule = build_lr_schedule(cfg.training, steps_per_epoch)
+    optimizer = _build_optimizer(model, lr_schedule, cfg.training)
 
-    # Optimizer
-    opt_name = cfg.training.get("optimizer", "adam")
-    if opt_name == "adam":
-        optimizer = nn.Adam(model.trainable_params(), learning_rate=lr_schedule, weight_decay=cfg.training.weight_decay)
-    elif opt_name == "adamw":
-        optimizer = nn.AdamWeightDecay(model.trainable_params(), learning_rate=lr_schedule, weight_decay=cfg.training.weight_decay)
-    else:
-        optimizer = nn.SGD(model.trainable_params(), learning_rate=lr_schedule, weight_decay=cfg.training.weight_decay, momentum=0.9)
+    # Val iterator factory for early stopping
+    npz_path = Path(cfg.data.processed_dir) / f"{cfg.data.name}.npz"
+    val_idx_arr = None  # saved inside _build_datasets — re-derive if needed
 
-    # Monitoring
-    logger = wandb_logger.WandBLogger(cfg) if cfg.get("wandb", True) else None
+    _train_loop(model, loss_fn, optimizer, train_ds, cfg.training)
 
-    # Callbacks
-    callbacks = [MetricLoggerCallback(logger=logger)]
-
-    # Train
-    ms_model = Model(model, loss_fn=loss_fn, optimizer=optimizer)
-    ms_model.train(
-        epoch=cfg.training.epochs,
-        train_dataset=train_ds,
-        callbacks=callbacks,
-        dataset_sink_mode=False,
-    )
-
-    # Save final
+    # Save final checkpoint
     output_dir = Path(cfg.output_dir) / cfg.model.name
     output_dir.mkdir(parents=True, exist_ok=True)
     ms.save_checkpoint(model, str(output_dir / "final.ckpt"))
     print(f"Training complete. Checkpoint saved to {output_dir}")
 
-    if logger:
-        logger.finish()
+
+def loso_train(cfg) -> "LOSOResult":
+    """Leave-One-Subject-Out training and evaluation.
+
+    Trains a separate model for every held-out subject and evaluates it,
+    then returns a :class:`~auras.training.evaluator.LOSOResult` with
+    per-fold and aggregated metrics.
+
+    Paper 02 (Busia et al. — EEGformer): LOSO is the gold-standard
+    cross-patient evaluation; avoids window-level data leakage between
+    train and test subjects present in simple random splits.
+
+    Parameters
+    ----------
+    cfg : OmegaConf
+        Full experiment config with ``data``, ``model``, ``training`` keys.
+
+    Returns
+    -------
+    LOSOResult
+    """
+    import mindspore as ms
+    from sklearn.model_selection import train_test_split
+
+    from auras.data.dataset import build_mindspore_dataset
+    from auras.experiment.cross_validation import loso_splits
+    from auras.models.factory import create_model
+    from auras.training.evaluator import LOSOResult, evaluate_epoch
+    from auras.training.losses import build_loss
+    from auras.training.lr_schedulers import build_lr_schedule
+
+    seed_everything(cfg.seed)
+    ms.set_context(mode=ms.PYNATIVE_MODE)
+
+    npz_path = Path(cfg.data.processed_dir) / f"{cfg.data.name}.npz"
+    raw = np.load(npz_path)
+    y = raw["y"]
+    subjects = raw["subjects"] if "subjects" in raw else np.zeros(len(y), dtype="U10")
+
+    loso_result = LOSOResult()
+    window_len = float(cfg.data.get("window_len_s", 4.0))
+    n_channels = len(cfg.data.channels.selected)
+    batch_size = cfg.training.batch_size
+
+    for fold_i, (train_idx, test_idx) in enumerate(loso_splits(subjects, y)):
+        held_out = str(subjects[test_idx[0]])
+        print(f"\nLOSO fold {fold_i + 1}: held-out={held_out}  "
+              f"train={len(train_idx)}  test={len(test_idx)}")
+
+        y_train = y[train_idx]
+        n_pos = int(y_train.sum())
+        n_neg = int(len(y_train) - n_pos)
+        if n_pos == 0 or n_neg == 0:
+            print(f"  Skipping fold — degenerate class distribution.")
+            continue
+
+        # Inner train/val split (for early stopping only)
+        val_frac = cfg.data.split.get("val_size", 0.1)
+        if len(train_idx) > 20:
+            tr_idx, val_idx = train_test_split(
+                train_idx, test_size=val_frac, stratify=y_train, random_state=cfg.seed
+            )
+        else:
+            tr_idx, val_idx = train_idx, train_idx
+
+        tr_ds = build_mindspore_dataset(npz_path, tr_idx, batch_size, shuffle=True)
+
+        def make_val_iter(vi=val_idx):
+            return build_mindspore_dataset(npz_path, vi, batch_size, shuffle=False).create_tuple_iterator()
+
+        # Build fresh model + optimizer each fold
+        model = create_model(cfg.model, num_channels=n_channels)
+        loss_fn = build_loss(cfg.training, n_pos, n_neg)
+        steps_per_epoch = max(len(tr_idx) // batch_size, 1)
+        lr_schedule = build_lr_schedule(cfg.training, steps_per_epoch)
+        optimizer = _build_optimizer(model, lr_schedule, cfg.training)
+
+        _train_loop(model, loss_fn, optimizer, tr_ds, cfg.training, val_iterator=make_val_iter)
+
+        # Evaluate on held-out subject
+        test_ds = build_mindspore_dataset(npz_path, test_idx, batch_size, shuffle=False)
+        fold_result = evaluate_epoch(model, test_ds.create_tuple_iterator(), window_length_s=window_len)
+        loso_result.fold_results.append(fold_result)
+        loso_result.subject_ids.append(held_out)
+
+        print(f"  recall={fold_result.segment.recall:.3f}  "
+              f"specificity={fold_result.segment.specificity:.3f}  "
+              f"fp/h={fold_result.fp_per_hour:.2f}")
+
+    if loso_result.fold_results:
+        print(f"\n{loso_result.summary()}")
+
+    return loso_result
 
 
 def main():
@@ -179,3 +331,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

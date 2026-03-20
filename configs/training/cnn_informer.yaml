@@ -1,0 +1,44 @@
+# =============================================================================
+# CNN-Informer training configuration
+# Paper 10 (Li et al. — CNN-Informer):
+#   Adam LR=1e-4, batch=32, epochs=100
+#   ProbSparse attention c=3
+#   Preprocessing: DWT + bandpass 0.5–40 Hz
+# =============================================================================
+
+epochs: 100
+batch_size: 32
+learning_rate: 1.0e-4
+weight_decay: 1.0e-4
+optimizer: adam
+
+gradient_clip_norm: 1.0
+
+scheduler:
+  name: cosine_annealing
+  warmup_epochs: 5
+  min_lr: 1.0e-7
+
+loss:
+  name: weighted_ce
+  class_weights: auto
+  focal_gamma: 2.0
+  label_smoothing: 0.0
+
+sampler:
+  strategy: weighted
+  neg_to_pos_ratio: 3
+
+early_stopping:
+  patience: 15
+  monitor: val_recall
+  mode: max
+
+checkpoint:
+  save_top_k: 3
+  monitor: val_recall
+  mode: max
+
+mixed_precision: false
+num_workers: 4
+seed: 42
