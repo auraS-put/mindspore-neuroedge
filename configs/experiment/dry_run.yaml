@@ -1,0 +1,41 @@
+# =============================================================================
+# Dry-run experiment configuration
+#
+# Purpose: verify the full pipeline end-to-end (data → features → train →
+# evaluate → save) with minimal compute.  One model per architecture family,
+# 2 epochs, tiny batch — should complete in < 5 min on CPU/GPU and < 2 min
+# on Ascend 910.
+#
+# Run locally:
+#   python scripts/run_dry_run.py --backend local
+#
+# Run on ModelArts:
+#   python scripts/run_dry_run.py --backend modelarts
+# =============================================================================
+
+name: dry_run
+
+datasets: [siena_sop5, siena_sop10, siena_sop15]
+
+# One representative per architecture family
+models:
+  - cnn_baseline        # plain CNN — fastest baseline
+
+# Classical ML baselines (DWT features → sklearn)
+classical_models:
+  - random_forest
+
+# Dry-run caps — small data slice for fast pipeline verification
+dry_run:
+  enabled: true
+  max_windows: 50                 # at most 50 windows — just enough for pipeline smoke-test
+  max_subjects: 2                 # at most 2 subjects
+
+repetitions: 1
+
+metrics:
+  primary: recall
+  track: [recall, specificity, f1, precision, auc_roc, accuracy, fp_per_hour]
+
+cross_validation:
+  method: loso

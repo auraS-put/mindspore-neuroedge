@@ -1,0 +1,23 @@
+# Baseline experiment — train every architecture on Siena dataset
+name: baseline_comparison
+
+datasets: [siena]
+
+models:
+  - lstm
+  - bilstm
+  - resnet1d
+  - mobilenetv3_1d
+  - ghostnet1d
+  - mobilevit_1d
+  - autoformer
+
+metrics:
+  primary: recall
+  track: [recall, f1, precision, specificity, fpr, auc_roc, accuracy]
+
+cross_validation:
+  method: loso                   # leave-one-subject-out
+  n_folds: null                  # auto from number of subjects
+
+repetitions: 3                   # repeat each config for statistical significance

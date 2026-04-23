@@ -1,5 +1,0 @@
-model:
-  family: mobilevit1d
-  input_channels: 6
-  variant: tiny
-  dropout: 0.2

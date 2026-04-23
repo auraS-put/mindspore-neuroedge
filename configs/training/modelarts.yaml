@@ -1,0 +1,16 @@
+# ModelArts cloud training configuration
+# Inherits from default, overrides for Ascend hardware
+defaults:
+  - default
+
+epochs: 150
+batch_size: 512
+mixed_precision: true            # leverage Ascend 910 FP16
+
+# ModelArts-specific
+modelarts:
+  enabled: true
+  data_url: s3://auras-data/processed/
+  train_url: s3://auras-output/
+  device_target: Ascend
+  device_num: 1

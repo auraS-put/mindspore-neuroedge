@@ -1,5 +1,16 @@
-model:
-  family: ghostnet1d
-  input_channels: 4
-  width_mult: 1.0
-  dropout: 0.2
+name: ghostnet1d
+arch: ghostnet1d
+
+# Architecture — GhostNet adapted for 1-D temporal EEG signals
+# SOURCE: Han K. et al. "GhostNet: More Features from Cheap Operations" CVPR 2020
+#         (Huawei Noah's Ark Lab); MindCV reference implementation
+# BASELINE (no direct EEG paper): lightweight MobileNet-class comparison.
+# Motivation: GhostNet achieves competitive accuracy at ~40% fewer ops via cheap
+# depthwise convolutions. Evaluates efficiency-accuracy trade-off for EEG seizure
+# prediction. SE blocks disabled (use_se=False) — not needed for 4-channel input.
+width_mult: 1.0
+ghost_ratio: 2                 # ratio of ghost:primary feature maps
+dropout: 0.2
+num_classes: 2
+
+# Training recommendation: Adam LR=1e-3, batch=64, cosine_annealing

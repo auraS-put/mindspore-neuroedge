@@ -1,8 +1,60 @@
 name: siena
-root: data/raw/siena
-sampling_rate_hz: 256
+root: data/raw/siena/siena-scalp-eeg-database-1.0.0
+processed_dir: data/processed
+sampling_rate_hz: 512          # native Siena EDF sampling rate
+target_rate_hz: 256            # downsample target (Papers 01 (Ingolfsson et al. — BrainFuseNet), 02 (Busia et al. — EEGformer), 06 (Jana & Mukherjee — NSGA-II), 10 (Li et al. — CNN-Informer), 22 (Dokare & Gupta — DWT-SVM))
+
+# --- channel selection -------------------------------------------------------
+# Papers 07 (Dash et al. — TF-Wearable) & 19 (El-Dajani et al. — BTE-CNN-LSTM): frontal-temporal 4-channel subset = F7, F8, T7, T8
+# Paper 07 (Dash et al. — TF-Wearable): this subset outperforms all 23 channels (99.73% vs 63.69%)
+# Paper 19 (El-Dajani et al. — BTE-CNN-LSTM): T3/T4 (= T7/T8) with CNN-LSTM = 68% sensitivity, AUC 0.92 patient-indep.
+# Paper 20 (Wang Y. et al. — CAM-CNN): CAM attention confirms 4-channel optimum
 channels:
+  mode: wearable
   selected: [F7, F8, T7, T8]
+  max_channels: 4
+
+# --- windowing ---------------------------------------------------------------
+# Paper 10 (Li et al. — CNN-Informer): 4 s / 1024 samples — best for prediction task
+# Paper 22 (Dokare & Gupta — DWT-SVM):      4 s @ 256 Hz = our primary baseline window
+# Paper 01 (Ingolfsson et al. — BrainFuseNet): 4 s @ 256 Hz on CHB-MIT
+# Paper 02 (Busia et al. — EEGformer):    8 s better for detection; 4 s used for prediction
 window:
-  seconds: 4
-  stride_seconds: 1
+  seconds: 4                   # → 1024 samples @ 256 Hz
+  stride_seconds: 1            # 75% overlap (Papers 06 (Jana & Mukherjee — NSGA-II), 10 (Li et al. — CNN-Informer), 22 (Dokare & Gupta — DWT-SVM))
+
+# --- signal preprocessing ----------------------------------------------------
+# Band-pass: 0.5–45 Hz (Papers 05 (Mazurek et al. — GAT), 06 (Jana & Mukherjee — NSGA-II))
+# Notch: 50 Hz (EU power-line; Siena dataset)
+# Normalization: z-score per channel (Paper 18 (Mehrabi et al. — ConvSNN) — explicit recommendation)
+# DWT filter: off by default; set mode: filter to enable Paper 10 (Li et al. — CNN-Informer) pipeline
+preprocessing:
+  bandpass_low_hz: 0.5
+  bandpass_high_hz: 45.0
+  notch_hz: 50
+  normalize: zscore            # zscore (Paper 18 (Mehrabi et al. — ConvSNN)) | minmax (Paper 20 (Wang Y. et al. — CAM-CNN)) | none
+  dwt:
+    mode: "off"                # off | filter (Paper 10 (Li et al. — CNN-Informer) band-pass reconstruction)
+    wavelet: db4               # Db4 standard for EEG (Papers 10 (Li et al. — CNN-Informer), 17 (Atlam et al. — PCA-DWT-SVM), 22 (Dokare & Gupta — DWT-SVM))
+    level: 5                   # 5-level: approx bands at 256 Hz
+    reconstruct_levels: [3, 4, 5]  # cD3+cD4+cD5 ≈ 4–32 Hz
+    include_approx: true       # + cA5 (0–4 Hz) → full 3–29 Hz band (Paper 10 (Li et al. — CNN-Informer))
+
+# --- labeling ----------------------------------------------------------------
+# mode: detection  — standard seizure detection (any overlap = ictal)
+# mode: prediction — preictal vs interictal (SOP/SPH framework)
+#
+# Paper 06 (Jana & Mukherjee — NSGA-II): SOP = 10 min; Paper 10 (Li et al. — CNN-Informer): preictal = undefined; consensus = 10–15 min
+# Paper 18 (Mehrabi et al. — ConvSNN): overlap_fraction = 0.20 (≥20% overlap → ictal label)
+# Paper 02 (Busia et al. — EEGformer): 15 min post-seizure excluded from interictal
+labeling:
+  mode: prediction             # detection | prediction
+  overlap_fraction: 0.20       # fraction of window overlapping ictal → label 1 (Paper 18 (Mehrabi et al. — ConvSNN))
+  sop_minutes: 15              # seizure occurrence period length for prediction mode
+  sph_minutes: 5               # seizure prediction horizon (clinical gap)
+  postictal_gap_minutes: 15    # post-ictal exclusion window (Paper 02 (Busia et al. — EEGformer))
+
+# --- cross-validation split --------------------------------------------------
+split:
+  method: loso                 # leave-one-subject-out (clinical standard)
+  val_fraction: 0.15           # fraction of training subjects used for val

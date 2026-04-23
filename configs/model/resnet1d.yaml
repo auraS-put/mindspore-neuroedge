@@ -1,0 +1,16 @@
+name: resnet1d
+arch: resnet1d
+
+# Architecture — ResNet-18 adapted for 1-D temporal EEG signals
+# BASELINE (no direct EEG paper): standard ResNet-18 (He et al. CVPR 2016) adapted to 1D;
+# used as a strong general-purpose CNN comparison baseline.
+# Closest EEG reference: Paper 13 (Sikarwar et al. — Entropy-ResNet-BiLSTM) uses residual
+# blocks; differs in that Paper 13 inputs entropy hand-crafted features, not raw EEG.
+# Key 1D adaptations: stem kernel k=15, residual kernel k=7 (vs k=7/3 in 2D ResNet)
+# to widen receptive field at 256 Hz. Channels 64→128→256→512 (ResNet-18 standard).
+num_blocks: [2, 2, 2, 2]      # ResNet-18 layout
+base_channels: 64
+dropout: 0.2
+num_classes: 2
+
+# Training recommendation: Adam LR=1e-3, batch=64, cosine_annealing

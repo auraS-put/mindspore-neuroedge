@@ -1,0 +1,63 @@
+# =============================================================================
+# Default training configuration
+# Best-practice settings synthesised from papers 01, 02, 03, 18, 19
+# =============================================================================
+
+# --- core hyperparameters ----------------------------------------------------
+# Paper 18 (Mehrabi et al. — ConvSNN): AdamW + OneCycleLR + WCE+label_smoothing → best holistic
+# Paper 03 (Spahr et al. — Episave): AdamW LR warmup 1e-5→1e-3 → cosine → best for wearable
+# Paper 19 (El-Dajani et al. — BTE-CNN-LSTM): Adam LR=1e-3, reduce×0.8 on plateau, batch=32
+# Paper 09 (Ahmad et al. — CNN-BiLSTM): Adam LR=1e-3, batch=100, 100 epochs
+epochs: 100
+batch_size: 64                   # Paper 18 (Mehrabi et al. — ConvSNN): 64; Paper 19 (El-Dajani et al. — BTE-CNN-LSTM): 32; compromise
+learning_rate: 1.0e-3
+weight_decay: 1.0e-4             # L2 regularisation
+optimizer: adamw                 # adamw (Paper 03 (Spahr et al. — Episave); Paper 18 (Mehrabi et al. — ConvSNN)) | adam | sgd
+log_every_steps: 50              # print step log every N batches
+
+# --- gradient clipping -------------------------------------------------------
+# Paper 18 (Mehrabi et al. — ConvSNN): explicit ‖g‖ ≤ 1.0 prevents gradient explosion in RNN+Transformer
+gradient_clip_norm: 1.0
+
+# --- LR schedule -------------------------------------------------------------
+# cosine_annealing: robust default; warmup 5 epochs (Paper 03 (Spahr et al. — Episave); Paper 08 (Xie et al. — TSS3D))
+# one_cycle: best for ConvSNN-style training (Paper 18 (Mehrabi et al. — ConvSNN))
+scheduler:
+  name: cosine_annealing        # cosine_annealing | step | one_cycle
+  warmup_epochs: 5
+  min_lr: 1.0e-6
+
+# --- loss function -----------------------------------------------------------
+# weighted_ce: standard for class-imbalanced seizure data (Paper 14 (Manzouri et al. — EE-Implantable); Paper 19 (El-Dajani et al. — BTE-CNN-LSTM))
+# focal:       gamma=2 focuses on hard examples (Paper 08 (Xie et al. — TSS3D); Paper 09 (Ahmad et al. — CNN-BiLSTM) comparison)
+# sswce:       CE + α(1-Spec) + β(1-Sens) per subject (Paper 01 (Ingolfsson et al. — BrainFuseNet) — best FP/h)
+# label smoothing: Paper 18 (Mehrabi et al. — ConvSNN) — smoothed labels with ε=0.1
+loss:
+  name: weighted_ce             # weighted_ce | focal | sswce
+  class_weights: auto           # auto = inverse class frequency (correct: from y_train)
+  focal_gamma: 2.0
+  label_smoothing: 0.1          # 0.0 disables; Paper 18 (Mehrabi et al. — ConvSNN) uses ε=0.1
+
+# --- imbalance handling -------------------------------------------------------
+# Paper 19 (El-Dajani et al. — BTE-CNN-LSTM) ablation: random under-sampling (2:3 ratio) > SMOTE for patient-indep
+# We use weighted sampler (inverse frequency) as default; configure per run
+sampler:
+  strategy: weighted            # weighted | undersample | oversample | none
+  neg_to_pos_ratio: 3           # used only when strategy = undersample
+
+# --- early stopping & checkpointing ------------------------------------------
+# Monitor val_recall (sensitivity) — clinical priority (Paper 01 (Ingolfsson et al. — BrainFuseNet); Paper 02 (Busia et al. — EEGformer); Paper 06 (Jana & Mukherjee — NSGA-II))
+early_stopping:
+  patience: 15
+  monitor: val_recall
+  mode: max
+
+checkpoint:
+  save_top_k: 3
+  monitor: val_recall
+  mode: max
+
+# --- misc --------------------------------------------------------------------
+mixed_precision: false          # set true for Ascend 910B (bf16)
+num_workers: 4
+seed: 42

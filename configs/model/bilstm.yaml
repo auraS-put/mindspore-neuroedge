@@ -1,0 +1,16 @@
+name: bilstm
+arch: bilstm
+
+# Architecture — Standalone BiLSTM (recurrent-only ablation baseline)
+# PURPOSE: tests whether temporal context alone (no CNN front-end) suffices.
+# REFERENCE: Papers 09 (Ahmad), 19 (El-Dajani) use BiLSTM as a component inside CNN-BiLSTM;
+# neither uses standalone BiLSTM on raw EEG as we do here.
+# Paper 19 BiLSTM hidden=40 (1 layer); Paper 09 BiLSTM hidden=64 (stacked).
+# Config uses hidden=128 × 2 layers to give the pure-RNN the strongest fair comparison.
+hidden_size: 128
+num_layers: 2
+bidirectional: true
+dropout: 0.3              # slightly above Paper 19 (0.25) for regularization
+num_classes: 2
+
+# Training recommendation: Adam LR=1e-3, batch=64, cosine_annealing, patience=15

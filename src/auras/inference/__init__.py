@@ -1,1 +1,1 @@
-"""Inference windowing and post-processing."""
+"""Inference package for auraS seizure prediction."""

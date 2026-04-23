@@ -1,8 +1,56 @@
 name: chbmit
 root: data/raw/chbmit
-sampling_rate_hz: 256
+processed_dir: data/processed
+sampling_rate_hz: 256          # CHB-MIT native rate (already 256 Hz)
+target_rate_hz: 256
+
+# --- channel selection -------------------------------------------------------
+# CHB-MIT uses bipolar channel notation: T7 appears in pairs like F7-T7, T7-P7.
+# We request raw electrode names; channels.py maps montages correctly.
+# Papers 01 (Ingolfsson et al. — BrainFuseNet), 02 (Busia et al. — EEGformer), 06 (Jana & Mukherjee — NSGA-II), 07 (Dash et al. — TF-Wearable), 10 (Li et al. — CNN-Informer), 19 (El-Dajani et al. — BTE-CNN-LSTM), 20 (Wang Y. et al. — CAM-CNN), 22 (Dokare & Gupta — DWT-SVM) all validate on CHB-MIT at 256 Hz.
+# Paper 22 (Dokare & Gupta — DWT-SVM) benchmark: 4s / 1024 samples / 5-channel → 97.70% accuracy
+# Paper 01 (Ingolfsson et al. — BrainFuseNet) benchmark: 4s / 1024 samples / 4-channel → 93.5% event detection
 channels:
+  mode: wearable
   selected: [F7, F8, T7, T8]
+  # bipolar fallbacks if monopolar names absent in EDF montage
+  bipolar_fallback: [F7-T7, F8-T8, T7-P7, T8-P8]
+  max_channels: 4
+
+# --- windowing ---------------------------------------------------------------
+# Paper 22 (primary CHB-MIT DWT+SVM baseline): 4 s = 1024 samples
+# Paper 10 (Li et al. — CNN-Informer, SoA on CHB-MIT): 4 s; seizure 50% overlap augmentation
+# Paper 01 (Ingolfsson et al. — BrainFuseNet): 4 s on CHB-MIT
 window:
-  seconds: 4
-  stride_seconds: 1
+  seconds: 4                   # → 1024 samples @ 256 Hz
+  stride_seconds: 1            # → 75% overlap
+
+# --- signal preprocessing ----------------------------------------------------
+# Band-pass per Paper 22 (Dokare & Gupta — DWT-SVM): 4th-order Butterworth low-pass 64 Hz + 60 Hz notch
+# We use 0.5–64 Hz band-pass (standard combined filter) + 60 Hz notch (US mains)
+# Normalization: z-score per channel (Paper 18 (Mehrabi et al. — ConvSNN))
+preprocessing:
+  bandpass_low_hz: 0.5
+  bandpass_high_hz: 64.0       # Paper 22 (Dokare & Gupta — DWT-SVM): 64 Hz lowpass for CHB-MIT
+  notch_hz: 60                 # US power-line frequency
+  normalize: zscore
+  dwt:
+    mode: off                  # set to 'filter' to enable Paper 10 (Li et al. — CNN-Informer) DWT band-pass
+    wavelet: db4
+    level: 5
+    reconstruct_levels: [3, 4, 5]
+    include_approx: true
+
+# --- labeling ----------------------------------------------------------------
+# Paper 10 (Li et al. — CNN-Informer) SoA: 0.16 FDR/h — our CHB-MIT prediction target
+# Paper 22 (Dokare & Gupta — DWT-SVM): detection mode (our CHB-MIT classical ML baseline)
+labeling:
+  mode: prediction
+  overlap_fraction: 0.20       # Paper 18 (Mehrabi et al. — ConvSNN) recommendation
+  sop_minutes: 15
+  sph_minutes: 5
+  postictal_gap_minutes: 15
+
+split:
+  method: loso
+  val_fraction: 0.15

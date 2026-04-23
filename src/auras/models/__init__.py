@@ -1,6 +1,5 @@
-"""Model factory placeholders for MindSpore implementations."""
+"""Model architectures for 1-D bio-signal classification."""
 
+from auras.models.factory import create_model, list_models
 
-def build_model(model_cfg: dict):
-    family = model_cfg.get("family", "lstm")
-    return {"family": family, "status": "placeholder"}
+__all__ = ["create_model", "list_models"]

@@ -22,11 +22,26 @@ data/processed/*
 !data/processed/.gitkeep
 experiments/runs/*
 !experiments/runs/.gitkeep
+experiments/optuna/*.db
+!experiments/optuna/.gitkeep
+
+# Model exports (large files)
+exports/*
+!exports/example/
+*.ckpt
+*.mindir
 
 # Env
 .env
 
-# OS/editor
+# Monitoring
+wandb/
+
+# OS/editor18
 .DS_Store
 .vscode/
 .idea/
+
+# Paper notes
+docs/
+extract_papers.py

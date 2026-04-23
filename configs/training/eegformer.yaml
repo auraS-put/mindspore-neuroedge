@@ -1,0 +1,44 @@
+# =============================================================================
+# EEGformer training configuration
+# Paper 02 (Busia et al. — EEGformer):
+#   Two-phase training: coarse Adam LR=5e-4 → fine-tune LR=1e-4
+#   LOSO is mandatory — no cross-patient window contamination
+#   15-min postictal exclusion before splitting windows
+# =============================================================================
+
+epochs: 150
+batch_size: 32
+learning_rate: 5.0e-4
+weight_decay: 1.0e-4
+optimizer: adam
+
+gradient_clip_norm: 1.0
+
+scheduler:
+  name: cosine_annealing
+  warmup_epochs: 10
+  min_lr: 1.0e-6
+
+loss:
+  name: weighted_ce
+  class_weights: auto
+  focal_gamma: 2.0
+  label_smoothing: 0.1
+
+sampler:
+  strategy: weighted
+  neg_to_pos_ratio: 3
+
+early_stopping:
+  patience: 20
+  monitor: val_recall
+  mode: max
+
+checkpoint:
+  save_top_k: 3
+  monitor: val_recall
+  mode: max
+
+mixed_precision: false
+num_workers: 4
+seed: 42

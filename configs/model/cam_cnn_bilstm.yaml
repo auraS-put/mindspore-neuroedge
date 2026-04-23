@@ -1,0 +1,14 @@
+name: cam_cnn_bilstm
+arch: cam_cnn_bilstm
+
+# Architecture — Channel Attention + CNN + BiLSTM (Paper 18 (Mehrabi et al. — ConvSNN); Paper 19 (El-Dajani et al. — BTE-CNN-LSTM); Paper 20 (Wang Y. et al. — CAM-CNN) — novel)
+stem_channels: 64
+lstm_hidden: 40
+dropout: 0.25
+num_classes: 2
+
+# Best training settings (Paper 18 (Mehrabi et al. — ConvSNN) + Paper 19 (El-Dajani et al. — BTE-CNN-LSTM) combined recipe)
+# optimizer: AdamW  lr: 1.0e-3  batch: 32  epochs: 100
+# lr_schedule: OneCycleLR
+# gradient_clip: 1.0
+# loss: weighted_cross_entropy + label_smoothing_0.05

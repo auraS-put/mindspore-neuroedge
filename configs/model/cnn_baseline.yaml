@@ -1,0 +1,11 @@
+name: cnn_baseline
+arch: cnn_baseline
+
+# Architecture — 3-layer 1-D CNN baseline
+conv_channels: [32, 64, 128]
+kernels: [7, 5, 3]
+dropout: 0.2
+num_classes: 2
+
+# Best training settings (Paper 14 (Manzouri et al. — EE-Implantable); Paper 20 (Wang Y. et al. — CAM-CNN) ablation reference)
+# optimizer: Adam  lr: 1.0e-3  batch: 32  epochs: 50

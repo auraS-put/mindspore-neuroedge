@@ -1,0 +1,13 @@
+name: cnn_bilstm
+arch: cnn_bilstm
+
+# Architecture — CNN stem + bidirectional LSTM (Paper 09 (Ahmad et al. — CNN-BiLSTM); Paper 19 (El-Dajani et al. — BTE-CNN-LSTM))
+conv_channels: [32, 64, 128]
+hidden_size: 64
+lstm_layers: 1
+dropout: 0.2
+num_classes: 2
+
+# Best training settings (Paper 19 (El-Dajani et al. — BTE-CNN-LSTM) — patient-independent CNN-LSTM)
+# optimizer: Adam  lr: 1.0e-3  batch: 32  epochs: 40
+# lr_schedule: reduce_on_plateau (×0.8)

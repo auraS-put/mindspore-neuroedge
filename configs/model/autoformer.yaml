@@ -1,6 +1,12 @@
-model:
-  family: autoformer
-  input_channels: 6
-  d_model: 128
-  n_heads: 4
-  dropout: 0.1
+name: autoformer
+arch: autoformer
+
+# Autoformer — decomposition-based Transformer for time-series
+d_model: 128
+n_heads: 4
+e_layers: 2                   # encoder layers
+d_ff: 256
+factor: 3                     # attention factor
+moving_avg: 25                # decomposition kernel size
+dropout: 0.1
+num_classes: 2

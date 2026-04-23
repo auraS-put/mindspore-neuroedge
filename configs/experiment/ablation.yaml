@@ -1,0 +1,24 @@
+# Ablation study — measure impact of design choices
+name: ablation_study
+
+base_model: ghostnet1d
+base_dataset: siena
+
+ablations:
+  # Channel count ablation
+  channels:
+    - [T7, T8]                   # 2-channel (minimal wearable)
+    - [F7, F8, T7, T8]           # 4-channel (default)
+    - [F7, F8, T7, T8, P7, P8]   # 6-channel (extended)
+
+  # Window size ablation
+  window_seconds: [2, 4, 8, 16]
+
+  # Preprocessing ablation
+  preprocessing:
+    - {zscore: true, bandpass: true}
+    - {zscore: false, bandpass: true}
+    - {zscore: true, bandpass: false}
+
+  # Loss function ablation
+  loss: [weighted_ce, focal]

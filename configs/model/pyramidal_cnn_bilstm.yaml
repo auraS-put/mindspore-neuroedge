@@ -1,0 +1,11 @@
+name: pyramidal_cnn_bilstm
+arch: pyramidal_cnn_bilstm
+
+# Architecture — Pyramidal stride-CNN + BiLSTM (~10–15 K params, Paper 04 (Wang C. et al. — PCNN-BiLSTM))
+lstm_hidden: 32
+dropout: 0.1
+num_classes: 2
+
+# Best training settings (Paper 04 (Wang C. et al. — PCNN-BiLSTM) — PCNN-BiLSTM)
+# optimizer: Adam  lr: 2.0e-5  batch: 32  epochs: 200
+# Note: Paper 04 (Wang C. et al. — PCNN-BiLSTM) uses 1000 epochs; use early stopping (patience=50) in practice

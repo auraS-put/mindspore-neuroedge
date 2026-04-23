@@ -1,0 +1,18 @@
+name: ultralight_cnn
+arch: ultralight_cnn
+
+# Architecture — Ultra-lightweight 1D-CNN (<10 K params)
+# INSPIRATION (not faithful reimplementation):
+#   Paper 08 (Xie et al. — TSS3D): motivates ultra-small param budget (~6.5K) and
+#     warmup+StepLR schedule, EMA post-processing. NOTE: Paper 08 is a 3D spatial-CNN;
+#     this model is 1D — the topology is completely different from Paper 08.
+#   Paper 20 (Wang Y. et al. — CAM-CNN): motivates channel attention, dilated conv (d=2).
+#     Paper 20 has ~255 params and requires 18+ channels for CAM selection; this 1D
+#     implementation uses soft channel reweighting on 4 fixed channels.
+dropout: 0.1
+num_classes: 2
+
+# Best training settings (Paper 08 (Xie et al. — TSS3D) — ultra-lightweight with warmup)
+# optimizer: Adam  lr: 1.0e-3  batch: 256  epochs: 30
+# lr_schedule: warmup 2 epochs, StepLR ×0.1 at epochs 16, 24
+# post_process: EMA + delayed alarm (3 consecutive detections)

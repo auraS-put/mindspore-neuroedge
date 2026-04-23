@@ -1,0 +1,45 @@
+# =============================================================================
+# Dry-run training overrides
+#
+# Minimises training time for pipeline verification.  All settings chosen
+# to be *fast*, not optimal.  Switch to configs/training/default.yaml for
+# real experiments.
+# =============================================================================
+
+epochs: 1
+batch_size: 16
+learning_rate: 1.0e-3
+weight_decay: 1.0e-4
+optimizer: adam                   # adam is faster to compile than adamw
+log_every_steps: 1               # log every single step in dry-run
+
+gradient_clip_norm: 1.0
+
+scheduler:
+  name: constant                  # no schedule complexity for dry-run
+  warmup_epochs: 0
+  min_lr: 1.0e-6
+
+loss:
+  name: weighted_ce
+  class_weights: auto
+  focal_gamma: 2.0
+  label_smoothing: 0.0
+
+sampler:
+  strategy: none                  # no weighted sampler overhead in dry-run
+
+# --- early stopping ----------------------------------------------------------
+early_stopping:
+  patience: 999                   # effectively disabled for dry-run
+  monitor: val_recall
+  mode: max
+
+checkpoint:
+  save_top_k: 1
+  monitor: val_recall
+  mode: max
+
+# --- misc --------------------------------------------------------------------
+num_workers: 0                    # avoid multiprocessing overhead for dry-run
+mixed_precision: false
