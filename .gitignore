@@ -25,11 +25,11 @@ experiments/runs/*
 experiments/optuna/*.db
 !experiments/optuna/.gitkeep
 
-# Model exports
-exports/
+# Model exports (large files)
+exports/*
+!exports/example/
 *.ckpt
 *.mindir
-*.ms
 
 # Env
 .env
