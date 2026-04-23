@@ -13,6 +13,7 @@ batch_size: 64                   # Paper 18 (Mehrabi et al. — ConvSNN): 64; Pa
 learning_rate: 1.0e-3
 weight_decay: 1.0e-4             # L2 regularisation
 optimizer: adamw                 # adamw (Paper 03 (Spahr et al. — Episave); Paper 18 (Mehrabi et al. — ConvSNN)) | adam | sgd
+log_every_steps: 50              # print step log every N batches
 
 # --- gradient clipping -------------------------------------------------------
 # Paper 18 (Mehrabi et al. — ConvSNN): explicit ‖g‖ ≤ 1.0 prevents gradient explosion in RNN+Transformer

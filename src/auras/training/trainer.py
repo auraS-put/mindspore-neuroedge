@@ -56,8 +56,15 @@ def _load_configs():
     return cfg, args.mode, args.checkpoint
 
 
-def _build_datasets(cfg):
-    """Load processed .npz and build train/val/test splits."""
+def _build_datasets(cfg, preloaded: dict = None):
+    """Load processed .npz and build train/val/test splits.
+
+    Parameters
+    ----------
+    preloaded : dict, optional
+        Pre-loaded numpy arrays (from ``np.load(path, mmap_mode='r')``).
+        Avoids re-reading the file for every model in the experiment loop.
+    """
     from auras.data.dataset import build_mindspore_dataset
 
     npz_path = Path(cfg.data.processed_dir) / f"{cfg.data.name}.npz"
@@ -66,38 +73,68 @@ def _build_datasets(cfg):
         print("Run:  python scripts/prepare_dataset.py --config configs/data/siena.yaml")
         sys.exit(1)
 
-    data = np.load(npz_path)
-    y = data["y"]
-    n = len(y)
+    # Use caller-supplied pre-loaded dict, or mmap the file once here.
+    if preloaded is None:
+        preloaded = np.load(npz_path, mmap_mode='r')
 
-    # Simple stratified split
+    label_key = cfg.data.get("target_key", "y")
+    y_full = preloaded[label_key]
+    n_full = len(y_full)
+
+    # Apply dry-run caps — build a mask of absolute indices to use
+    max_w = cfg.data.get("dry_run_max_windows", n_full)
+    max_s = cfg.data.get("dry_run_max_subjects", None)
+    subjects_arr = preloaded["subjects"] if "subjects" in preloaded else None
+    if max_s is not None and subjects_arr is not None:
+        kept = np.isin(subjects_arr, np.unique(subjects_arr)[:int(max_s)])
+        abs_indices = np.where(kept)[0]
+    else:
+        abs_indices = np.arange(n_full)
+    if len(abs_indices) > max_w:
+        rng_cap = np.random.default_rng(42)
+        abs_indices = rng_cap.choice(abs_indices, int(max_w), replace=False)
+        abs_indices.sort()
+
+    # y and positional indices are now aligned: y[i] corresponds to abs_indices[i]
+    y = y_full[abs_indices]
+    n = len(y)
+    pos_indices = np.arange(n)   # 0..n-1 for splitting
+
+    # Simple stratified split on positional indices, then map back to absolute
     from sklearn.model_selection import train_test_split
 
-    indices = np.arange(n)
     test_size = cfg.data.split.get("test_size", 0.2)
     val_size = cfg.data.split.get("val_size", 0.1)
 
-    train_val_idx, test_idx = train_test_split(
-        indices, test_size=test_size, stratify=y, random_state=cfg.seed
+    pos_train_val, pos_test = train_test_split(
+        pos_indices, test_size=test_size, stratify=y, random_state=cfg.seed
     )
     relative_val = val_size / (1 - test_size)
-    train_idx, val_idx = train_test_split(
-        train_val_idx, test_size=relative_val, stratify=y[train_val_idx], random_state=cfg.seed
+    pos_train, pos_val = train_test_split(
+        pos_train_val, test_size=relative_val, stratify=y[pos_train_val], random_state=cfg.seed
     )
 
-    batch_size = cfg.training.batch_size
-    num_workers = cfg.training.get("num_workers", 4)
+    # Map back to absolute NPZ indices for the dataset loader
+    train_idx = abs_indices[pos_train]
+    val_idx   = abs_indices[pos_val]
+    test_idx  = abs_indices[pos_test]
 
-    train_ds = build_mindspore_dataset(npz_path, train_idx, batch_size, shuffle=True, num_workers=num_workers)
-    val_ds = build_mindspore_dataset(npz_path, val_idx, batch_size, shuffle=False, num_workers=num_workers)
-    test_ds = build_mindspore_dataset(npz_path, test_idx, batch_size, shuffle=False, num_workers=num_workers)
+    batch_size = cfg.training.batch_size
+    num_workers = max(cfg.training.get("num_workers", 4), 1)  # MindSpore requires >= 1
+
+    train_ds = build_mindspore_dataset(npz_path, train_idx, batch_size, shuffle=True,
+                                       num_workers=num_workers, preloaded=preloaded, label_key=label_key)
+    val_ds = build_mindspore_dataset(npz_path, val_idx, batch_size, shuffle=False,
+                                     num_workers=num_workers, preloaded=preloaded, label_key=label_key)
+    test_ds = build_mindspore_dataset(npz_path, test_idx, batch_size, shuffle=False,
+                                      num_workers=num_workers, preloaded=preloaded, label_key=label_key)
 
     meta = {
         "train_samples": len(train_idx),
         "val_samples": len(val_idx),
         "test_samples": len(test_idx),
-        "train_positive": int(y[train_idx].sum()),
-        "train_negative": int(len(train_idx) - y[train_idx].sum()),
+        "train_positive": int(y[pos_train].sum()),
+        "train_negative": int(len(pos_train) - y[pos_train].sum()),
     }
     return train_ds, val_ds, test_ds, meta
 
@@ -155,22 +192,51 @@ def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
     no_improve = 0
     best_epoch = 0
 
+    import datetime
+
     for epoch in range(cfg.epochs):
         model.set_train(True)
         epoch_loss = 0.0
         n_batches = 0
+        log_every = max(1, cfg.get("log_every_steps", 10))
+
         for X, label in train_ds.create_tuple_iterator():
             loss, grads = grad_fn(X, label)
             grads = ops.clip_by_global_norm(grads, clip_norm)
             optimizer(grads)
-            epoch_loss += float(loss.asnumpy())
+            step_loss = float(loss.asnumpy())
+            epoch_loss += step_loss
             n_batches += 1
+
+            if n_batches % log_every == 0:
+                ts = datetime.datetime.now().strftime("%H:%M:%S")
+                avg_so_far = epoch_loss / n_batches
+                print(
+                    f"  [{ts}] Epoch {epoch + 1}/{cfg.epochs}"
+                    f"  step {n_batches}"
+                    f"  loss={step_loss:.4f}"
+                    f"  avg={avg_so_far:.4f}",
+                    flush=True,
+                )
+
+        avg_loss = epoch_loss / max(n_batches, 1)
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
 
         # Early stopping on validation recall
         if val_iterator is not None:
+            model.set_train(False)
             result = evaluate_epoch(model, val_iterator())
             val_recall = result.segment.recall
+            val_f1 = result.segment.f1
             improved = val_recall > best_val if monitor_mode == "max" else val_recall < best_val
+            marker = " *" if improved else ""
+            print(
+                f"  [{ts}] Epoch {epoch + 1:>3}/{cfg.epochs}"
+                f"  loss={avg_loss:.4f}"
+                f"  val_recall={val_recall:.4f}"
+                f"  val_f1={val_f1:.4f}"
+                f"{marker}"
+            )
             if improved:
                 best_val = val_recall
                 no_improve = 0
@@ -178,8 +244,10 @@ def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
             else:
                 no_improve += 1
             if no_improve >= patience:
-                print(f"  Early stop at epoch {epoch + 1} (best={best_val:.4f} @ epoch {best_epoch})")
+                print(f"  Early stop at epoch {epoch + 1} (best_val_recall={best_val:.4f} @ epoch {best_epoch})")
                 break
+        else:
+            print(f"  [{ts}] Epoch {epoch + 1:>3}/{cfg.epochs}  loss={avg_loss:.4f}")
 
     return best_epoch
 
@@ -261,7 +329,8 @@ def loso_train(cfg) -> "LOSOResult":
 
     npz_path = Path(cfg.data.processed_dir) / f"{cfg.data.name}.npz"
     raw = np.load(npz_path)
-    y = raw["y"]
+    label_key = cfg.data.get("target_key", "y")
+    y = raw[label_key]
     subjects = raw["subjects"] if "subjects" in raw else np.zeros(len(y), dtype="U10")
 
     loso_result = LOSOResult()
@@ -290,10 +359,12 @@ def loso_train(cfg) -> "LOSOResult":
         else:
             tr_idx, val_idx = train_idx, train_idx
 
-        tr_ds = build_mindspore_dataset(npz_path, tr_idx, batch_size, shuffle=True)
+        tr_ds = build_mindspore_dataset(npz_path, tr_idx, batch_size, shuffle=True,
+                                         label_key=label_key)
 
         def make_val_iter(vi=val_idx):
-            return build_mindspore_dataset(npz_path, vi, batch_size, shuffle=False).create_tuple_iterator()
+            return build_mindspore_dataset(npz_path, vi, batch_size, shuffle=False,
+                                           label_key=label_key).create_tuple_iterator()
 
         # Build fresh model + optimizer each fold
         model = create_model(cfg.model, num_channels=n_channels)
@@ -305,7 +376,8 @@ def loso_train(cfg) -> "LOSOResult":
         _train_loop(model, loss_fn, optimizer, tr_ds, cfg.training, val_iterator=make_val_iter)
 
         # Evaluate on held-out subject
-        test_ds = build_mindspore_dataset(npz_path, test_idx, batch_size, shuffle=False)
+        test_ds = build_mindspore_dataset(npz_path, test_idx, batch_size, shuffle=False,
+                                           label_key=label_key)
         fold_result = evaluate_epoch(model, test_ds.create_tuple_iterator(), window_length_s=window_len)
         loso_result.fold_results.append(fold_result)
         loso_result.subject_ids.append(held_out)

@@ -17,7 +17,7 @@ class EEGWindowDataset:
 
     Expects ``data.npz`` with keys:
         - ``X``: float32 array of shape ``(N, C, T)``
-        - ``y``: int32 array of shape ``(N,)``
+        - ``y`` or a custom ``label_key``: int32 array of shape ``(N,)``
 
     Parameters
     ----------
@@ -27,6 +27,9 @@ class EEGWindowDataset:
         Subset of sample indices to expose (for train/val/test splits).
     transform : callable, optional
         On-the-fly augmentation applied to each ``(x, y)`` pair.
+    label_key : str, optional
+        Which key to use as the target label array.  Defaults to ``"y"``.
+        Set to ``"y_sop5"`` / ``"y_sop10"`` / ``"y_sop15"`` for the merged NPZ.
     """
 
     def __init__(
@@ -34,10 +37,17 @@ class EEGWindowDataset:
         npz_path: str | Path,
         indices: Optional[np.ndarray] = None,
         transform=None,
+        _preloaded: Optional[dict] = None,
+        label_key: str = "y",
     ) -> None:
-        data = np.load(npz_path)
+        # Accept a pre-loaded dict to avoid re-reading the file for every model.
+        # mmap_mode='r' maps the file without reading it all into RAM when not preloaded.
+        if _preloaded is not None:
+            data = _preloaded
+        else:
+            data = np.load(npz_path, mmap_mode='r')
         self._X = data["X"]
-        self._y = data["y"]
+        self._y = data[label_key]
         # subjects array added by updated prepare_dataset.py (Sprint 1)
         self._subjects = data["subjects"] if "subjects" in data else np.zeros(len(self._y), dtype=np.int32)
         self._indices = indices if indices is not None else np.arange(len(self._y))
@@ -67,19 +77,25 @@ def build_mindspore_dataset(
     shuffle: bool = True,
     num_workers: int = 4,
     transform=None,
+    preloaded: Optional[dict] = None,
+    label_key: str = "y",
 ):
     """Wrap :class:`EEGWindowDataset` in a MindSpore GeneratorDataset.
 
-    Returns a fully configured dataset pipeline ready for ``model.train()``.
+    Pass ``preloaded=np.load(path, mmap_mode='r')`` to avoid loading the
+    file once per model when running multiple models in sequence.
     """
     import mindspore.dataset as ds
 
-    source = EEGWindowDataset(npz_path, indices=indices, transform=transform)
+    source = EEGWindowDataset(npz_path, indices=indices, transform=transform,
+                              _preloaded=preloaded, label_key=label_key)
     dataset = ds.GeneratorDataset(
         source=source,
         column_names=["eeg", "label"],
         shuffle=shuffle,
         num_parallel_workers=num_workers,
     )
-    dataset = dataset.batch(batch_size, drop_remainder=True)
+    # drop_remainder=False when dataset is smaller than one batch to avoid empty iterator
+    drop = len(source) >= batch_size
+    dataset = dataset.batch(batch_size, drop_remainder=drop)
     return dataset

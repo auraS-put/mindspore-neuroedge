@@ -1,0 +1,35 @@
+# =============================================================================
+# Post-processing configuration
+# Paper 01 (Ingolfsson et al. — BrainFuseNet): majority vote n=3, k=2
+# Paper 02 (Busia et al. — EEGformer): majority voting on MCU
+# Paper 03 (Spahr et al. — Episave): quantile aggregation, q=0.6 (conservative)
+# Paper 06 (Jana & Mukherjee — NSGA-II): majority voting FP reduction
+# Paper 08 (Xie et al. — TSS3D): EMA smoothing α=0.3
+# =============================================================================
+
+# Default post-processing pipeline (applied sequentially)
+pipeline:
+  - name: majority_vote
+    enabled: true
+    n: 3                  # voting window size (Papers 01, 02, 06)
+    k: 2                  # minimum positives to trigger alarm (majority of 3)
+
+  - name: collar_merge
+    enabled: true
+    collar_windows: 3     # ~12 s gap bridging at 4 s/window (Papers 01, 02)
+
+# --- EMA smoothing (alternative single-step pipeline) ---
+# Paper 08 (Xie et al. — TSS3D): α=0.3, threshold=0.5
+ema:
+  alpha: 0.3
+  threshold: 0.5
+
+# --- Ensemble quantile aggregation ---
+# Paper 03 (Spahr et al. — Episave): q=0.6 for clinical deployment
+ensemble:
+  quantile: 0.6
+
+# --- Threshold sweep for ROC / sensitivity-FP/h trade-off ---
+threshold_sweep:
+  n_thresholds: 51        # 51 evenly-spaced thresholds in [0, 1]
+  apply_majority_vote: true

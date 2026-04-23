@@ -91,10 +91,11 @@ def sliding_window(x: np.ndarray, window: int, stride: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def _sample_entropy(ts: np.ndarray, m: int = 2, r_factor: float = 0.2,
-                    max_n: int = 256) -> float:
+                    max_n: int = 64) -> float:
     """Sample entropy — complexity measure (Paper 22 (Dokare & Gupta — DWT-SVM), SAMPEN).
 
-    Truncates to *max_n* samples to keep O(n²) computation tractable.
+    Truncates to *max_n* samples to keep computation tractable.
+    Uses a vectorised NumPy implementation (O(n²) in memory but no Python loops).
     """
     ts = np.asarray(ts, dtype=np.float64)
     if len(ts) > max_n:
@@ -104,16 +105,18 @@ def _sample_entropy(ts: np.ndarray, m: int = 2, r_factor: float = 0.2,
     if r == 0:
         return 0.0
 
-    def _count_pairs(m_len: int) -> int:
-        count = 0
-        for i in range(n - m_len):
-            for j in range(i + 1, n - m_len):
-                if np.max(np.abs(ts[i: i + m_len] - ts[j: j + m_len])) <= r:
-                    count += 1
-        return count
+    def _count_pairs_vec(m_len: int) -> int:
+        # Build (n-m_len) × (n-m_len) Chebyshev-distance matrix via broadcasting
+        templates = np.array([ts[i: i + m_len] for i in range(n - m_len)])  # (n-m, m)
+        # Chebyshev distance = max abs difference across the m lags
+        diff = np.abs(templates[:, None, :] - templates[None, :, :])  # (n-m, n-m, m)
+        max_diff = diff.max(axis=-1)                                   # (n-m, n-m)
+        # Upper triangle only, excluding diagonal
+        idx = np.triu_indices(len(templates), k=1)
+        return int((max_diff[idx] <= r).sum())
 
-    b = _count_pairs(m)
-    a = _count_pairs(m + 1)
+    b = _count_pairs_vec(m)
+    a = _count_pairs_vec(m + 1)
     if b == 0:
         return 0.0
     return -float(np.log(a / b)) if a > 0 else float("inf")
@@ -308,4 +311,7 @@ def dwt_features(
         for c_arr in coeffs:
             features.extend(_band_stats(c_arr))
 
-    return np.array(features, dtype=np.float32)
+    raw = np.array(features, dtype=np.float32)
+    # Replace NaN (zero-variance skew/kurtosis) and Inf (sample entropy edge case)
+    # with 0.0 / large-finite so downstream ML models receive clean inputs.
+    return np.nan_to_num(raw, nan=0.0, posinf=5.0, neginf=0.0)

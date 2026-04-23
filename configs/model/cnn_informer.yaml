@@ -12,4 +12,7 @@ num_classes: 2
 
 # Best training settings (Paper 10 (Li et al. — CNN-Informer) — CNN-Informer)
 # optimizer: Adam  lr: 1.0e-4  batch: 32  epochs: 100
-# input: 4s windows @ 256 Hz = 1024 samples
+# input: 4s windows @ 256 Hz = 1024 samples (4-ch adaptation; paper used 18-ch → ~200K params)
+# NOTE: Paper 10 applies DWT Db4 (3-29 Hz band) preprocessing BEFORE the CNN.
+# To replicate paper exactly: set preprocessing.dwt.mode: filter in configs/data/siena.yaml
+# Default pipeline uses Butterworth bandpass only (no DWT) — valid but deviates from paper.

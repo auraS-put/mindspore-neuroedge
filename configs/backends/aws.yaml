@@ -1,0 +1,27 @@
+# =============================================================================
+# AWS SageMaker backend configuration
+#
+# Credentials are read from env vars or ~/.aws/credentials:
+#   AWS_DEFAULT_REGION     e.g. eu-west-1
+#   SAGEMAKER_ROLE_ARN     arn:aws:iam::<account>:role/SageMakerExecutionRole
+#   SAGEMAKER_S3_BUCKET    s3://auras-experiments
+# =============================================================================
+
+region: ${oc.env:AWS_DEFAULT_REGION,eu-west-1}
+role_arn: ${oc.env:SAGEMAKER_ROLE_ARN,""}
+s3_bucket: ${oc.env:SAGEMAKER_S3_BUCKET,s3://auras-experiments}
+s3_data_prefix: data/processed/
+
+# Instance type — GPU recommended for training
+#   CPU dev:  ml.m5.xlarge
+#   GPU:      ml.g4dn.xlarge  (1× T4, 16 GB)
+#   Multi-GPU: ml.p3.8xlarge  (4× V100)
+instance_type: ml.g4dn.xlarge
+
+# Built-in framework image — set to "" to use stock pytorch image
+image_uri: ""
+framework: pytorch
+framework_version: "2.1"
+py_version: py310
+
+max_wait_seconds: 7200

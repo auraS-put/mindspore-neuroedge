@@ -1,18 +1,20 @@
 """EEGformer (A5) — lightweight pure-Transformer for EEG (Paper 02 (Busia et al. — EEGformer)).
 
 Adapted directly from the 50.6 K-param architecture in Paper 02 (Busia et al. — EEGformer).
-A non-overlapping patch embedding projects the raw EEG into a
-short token sequence, which is processed by a single Transformer
-encoder block with learnable positional encoding.
+Paper 02 uses TWO non-overlapping Conv1D layers for patch embedding (both k=5, both
+stride=k so no overlap) before the single Transformer encoder block.
 
 Paper 02 (Busia et al. — EEGformer) settings:
   embed_dim=128, num_heads=8, patch_size=5, mlp_ratio=2, dropout=0.1
-  Training: Adam LR=5e-4, batch=16, two-phase training
+  Training: Adam LR=5e-5, batch=16
+  Two-phase: 100 epochs subject-independent → 50 epochs subject-specific fine-tuning
+  Input: 4 × 2048 (4 channels × 8 s × 256 Hz); 8 s windows outperform 4 s
 
 Input: (B, C, T) → Output: (B, num_classes)
 
 Architecture:
-  Conv1d(C→128, k=patch_size, s=patch_size)  ← non-overlapping patches
+  Conv1d(C→128, k=patch_size, s=patch_size)  ← patch layer 1 (non-overlapping)
+  Conv1d(128→128, k=patch_size, s=patch_size) ← patch layer 2 (Paper 02 uses 2 layers)
   Learnable positional encoding (max_seq, 1, 128)
   1× _TransformerBlock1D(128, 8 heads, mlp_ratio=2)
   Mean-pool over patches → Dropout → Dense(128→num_classes)
@@ -47,9 +49,13 @@ class EEGformer(BaseSeizureModel):
     ):
         super().__init__(num_classes=num_classes)
 
-        # Non-overlapping patch embedding (stride == kernel → no overlap)
-        self.patch_embed = nn.Conv1d(
+        # Two non-overlapping patch embedding layers (Paper 02 uses 2× Conv1D, both k=5, stride=k)
+        self.patch_embed1 = nn.Conv1d(
             num_channels, embed_dim, patch_size,
+            stride=patch_size, pad_mode="valid",
+        )
+        self.patch_embed2 = nn.Conv1d(
+            embed_dim, embed_dim, patch_size,
             stride=patch_size, pad_mode="valid",
         )
 
@@ -71,7 +77,8 @@ class EEGformer(BaseSeizureModel):
         )
 
     def construct(self, x: Tensor) -> Tensor:
-        x = self.patch_embed(x)           # (B, embed_dim, n_patches)
+        x = self.patch_embed1(x)           # (B, embed_dim, n_patches_1)
+        x = self.patch_embed2(x)           # (B, embed_dim, n_patches_2)
         x = x.transpose(2, 0, 1)          # (n_patches, B, embed_dim)
         seq_len = x.shape[0]
         x = x + self.pos_enc[:seq_len]    # add positional encoding

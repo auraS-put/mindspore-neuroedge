@@ -1,0 +1,59 @@
+# =============================================================================
+# SOP Ablation Experiment
+#
+# Trains every DL model on three preictal window lengths (SOP = 5, 10, 15 min)
+# to quantify how prediction horizon length affects performance.
+#
+# Research question: Does a longer SOP improve recall at the cost of
+# specificity? Paper 06 (Jana & Mukherjee — NSGA-II) uses 10 min; our
+# primary setting is 15 min. SOP=5 min is a conservative short-horizon variant.
+#
+# Prerequisites — generate the three NPZ files first:
+#   ./scripts/prepare_all_sop.sh
+#
+# Run:
+#   python scripts/run_experiment.py --config configs/experiment/sop_ablation.yaml
+#
+# Outputs (one directory per dataset × model × rep):
+#   experiments/runs/sop_ablation/
+#     siena_sop5/  siena_sop10/  siena_sop15/
+#       <model>/rep_0/
+#         model.ckpt
+#         metrics.json
+#     results_summary.json   ← all results in one table
+#     training_*.log
+# =============================================================================
+
+name: sop_ablation
+
+# All three data variants — same pipeline, different SOP window
+datasets:
+  - siena_sop5       # SOP =  5 min (short-horizon)
+  - siena_sop10      # SOP = 10 min (Paper 06 — Jana & Mukherjee — NSGA-II)
+  - siena_sop15      # SOP = 15 min (our primary; consensus upper bound)
+
+# Full model set — compare all architectures across all SOP settings
+models:
+  - cnn_baseline
+  - cnn_bilstm
+  - cnn_bilstm_attn
+  - cam_cnn_bilstm
+  - pyramidal_cnn_bilstm
+  - resnet1d
+  - ghostnet1d
+  - bilstm
+  - ultralight_cnn
+  - eegformer
+  - cnn_informer
+
+# Classical baselines (one run per SOP; uses DWT features)
+classical_models:
+  - svm
+  - random_forest
+  - xgboost
+
+metrics:
+  primary: recall
+  track: [recall, f1, precision, specificity, fpr, auc_roc, accuracy]
+
+repetitions: 1          # increase to 3 for statistical significance (much longer)

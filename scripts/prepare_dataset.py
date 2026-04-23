@@ -66,7 +66,25 @@ def _load_edf(
     import mne
 
     raw = mne.io.read_raw_edf(str(path), preload=True, verbose=False)
-    raw.rename_channels({ch: ch.strip().upper() for ch in raw.ch_names})
+
+    # Normalise channel names:
+    #   1. Strip leading "EEG " / "EOG " prefixes common in Siena EDFs
+    #   2. Strip whitespace and uppercase
+    #   3. Remap old 10-20 names → new (T3→T7, T4→T8, T5→P7, T6→P8)
+    _OLD_TO_NEW = {"T3": "T7", "T4": "T8", "T5": "P7", "T6": "P8"}
+    rename_map = {}
+    for ch in raw.ch_names:
+        norm = ch.strip()
+        for prefix in ("EEG ", "EOG ", "EMG ", "ECG ", "EKG "):
+            if norm.upper().startswith(prefix):
+                norm = norm[len(prefix):]
+                break
+        norm = norm.strip().upper()
+        norm = _OLD_TO_NEW.get(norm, norm)
+        if norm != ch:
+            rename_map[ch] = norm
+    if rename_map:
+        raw.rename_channels(rename_map)
 
     available = [ch for ch in target_channels if ch in raw.ch_names]
     if not available:
@@ -119,8 +137,8 @@ def _apply_dwt(data: np.ndarray, cfg) -> np.ndarray:
     dwt_cfg = cfg.preprocessing.get("dwt", None)
     if dwt_cfg is None:
         return data
-    mode = dwt_cfg.get("mode", "off")
-    if mode == "off":
+    mode = str(dwt_cfg.get("mode", "off")).lower()
+    if mode in ("off", "false", "0", "no"):
         return data
     if mode == "filter":
         # Li et al. (CNN-Informer): Db4 level-5, keep cD3+cD4+cD5+cA5 → ~3–29 Hz
@@ -268,7 +286,9 @@ def prepare(cfg) -> None:  # noqa: C901 (acceptable complexity for a data pipeli
     subjects = np.concatenate(all_subjects, axis=0)
 
     npz_path = out_dir / f"{cfg.name}.npz"
-    np.savez_compressed(str(npz_path), X=X, y=y, subjects=subjects)
+    # Save uncompressed so numpy can memory-map the array (instant load).
+    # Compressed saves ~40% disk but makes every load decompress the full file.
+    np.savez(str(npz_path), X=X, y=y, subjects=subjects)
 
     # subject ID → name lookup
     int_to_subject = {v: k for k, v in subject_to_int.items()}

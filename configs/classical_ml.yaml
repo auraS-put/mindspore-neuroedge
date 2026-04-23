@@ -1,0 +1,81 @@
+# =============================================================================
+# Classical ML baseline configuration
+# Paper 22 (Dokare & Gupta — DWT-SVM): SVM-RBF, C=100, gamma=0.001
+# Paper 07 (Dash et al. — TF-Wearable): SVM / RF / XGB / LGB / KNN comparison
+# Paper 11 (Djemal et al. — XGBoost-CS): XGBoost n_estimators=200, max_depth=8
+# Paper 05 (GAT): RF n_estimators=100
+# Paper 14 (Manzouri et al. — EE-Implantable): RF balanced, max_depth=10
+# Paper 17 (Sánchez-Reyes et al. — PCA+DWT+SVM): KNN k=3, distance-weighted
+# =============================================================================
+
+# Feature extraction
+features:
+  wavelet: db4            # Daubechies-4 (standard for EEG; Papers 10, 22)
+  level: 4                # 5 sub-bands: δ θ α β γ  (Paper 22)
+  n_features: 200         # C=4 channels × 5 bands × 10 stats per band
+
+# Evaluation protocol
+evaluation:
+  strategy: loso          # Leave-One-Subject-Out (Paper 02, 10, 18, 19)
+  seed: 42
+
+# Models to run (all by default)
+models:
+  - svm_rbf
+  - svm_linear
+  - random_forest
+  - xgboost
+  - lightgbm
+  - knn
+
+# --- SVM-RBF ---
+# Paper 22 (Dokare & Gupta — DWT-SVM): C=100, gamma=0.001 → 97.7% acc, 86.7% sens
+svm_rbf:
+  C: 100
+  gamma: 0.001
+  kernel: rbf
+  class_weight: balanced
+  probability: true
+
+# --- SVM-Linear ---
+# Paper 07 (Dash et al. — TF-Wearable): linear kernel comparison
+svm_linear:
+  C: 1.0
+  kernel: linear
+  class_weight: balanced
+  probability: true
+
+# --- Random Forest ---
+# Paper 05 (GAT) + Paper 14 (Manzouri et al. — EE-Implantable): n_estimators=100, max_depth=10
+random_forest:
+  n_estimators: 100
+  max_depth: 10
+  min_samples_leaf: 2
+  class_weight: balanced
+
+# --- XGBoost ---
+# Paper 11 (Djemal et al. — XGBoost-CS): n_estimators=200, max_depth=8, lr=0.1
+xgboost:
+  n_estimators: 200
+  max_depth: 8
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  # scale_pos_weight set automatically from neg/pos ratio
+
+# --- LightGBM ---
+# Paper 07 (Dash et al. — TF-Wearable): LightGBM, num_leaves=63, lr=0.05
+lightgbm:
+  n_estimators: 200
+  num_leaves: 63
+  learning_rate: 0.05
+  subsample: 0.8
+  colsample_bytree: 0.8
+  class_weight: balanced
+
+# --- KNN ---
+# Paper 17 (Sánchez-Reyes et al. — PCA+DWT+SVM): k=3, distance-weighted after DWT+PCA
+knn:
+  n_neighbors: 3
+  weights: distance
+  metric: euclidean

@@ -1,0 +1,45 @@
+# =============================================================================
+# Huawei Cloud ModelArts backend configuration
+#
+# Credentials MUST be supplied via environment variables in production:
+#   MA_AK           Access Key ID
+#   MA_SK           Secret Access Key
+#   MA_PROJECT_ID   Huawei Cloud project ID
+#
+# This file provides non-secret defaults and structural settings.
+# Copy to configs/backends/modelarts_local.yaml and fill in credentials
+# for local testing (never commit credentials).
+#
+# ModelArts documentation:
+#   https://support.huaweicloud.com/intl/en-us/devtool-modelarts/
+#   API reference: https://support.huaweicloud.com/intl/en-us/api-modelarts/
+# =============================================================================
+
+endpoint: https://modelarts.cn-north-4.myhuaweicloud.com
+region: cn-north-4
+
+# Your Huawei Cloud project ID (visible in the console top-right dropdown)
+project_id: ${oc.env:MA_PROJECT_ID,""}
+
+# Credentials — prefer environment variables MA_AK / MA_SK
+ak: ${oc.env:MA_AK,""}
+sk: ${oc.env:MA_SK,""}
+
+# OBS bucket paths — update to match your bucket name
+obs_bucket: obs://auras-experiments
+obs_data_path: obs://auras-experiments/data/processed/
+obs_output_path: obs://auras-experiments/runs/
+
+# Compute flavour
+#   CPU dev:    modelarts.vm.cpu.8u        (8 vCPU, 32 GB RAM)
+#   GPU:        modelarts.vm.gpu.p3        (1× V100)
+#   Ascend:     modelarts.vm.ascend.910    (1× Ascend 910B, 32 GB HBM)
+train_instance: modelarts.vm.cpu.8u
+
+# Docker image — leave empty to use the built-in MindSpore 2.8 image
+# Set to a custom OBS path if you need extra packages:
+#   swr.cn-north-4.myhuaweicloud.com/<account>/auras:latest
+train_image_url: ""
+
+log_level: INFO
+max_wait_seconds: 7200          # 2-hour timeout

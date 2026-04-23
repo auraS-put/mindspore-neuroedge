@@ -34,12 +34,22 @@ def parse_seizure_file(path: Path) -> List[SeizureInterval]:
     """Parse a single ``Seizures-list-PNXX.txt`` file.
 
     Returns a list of :class:`SeizureInterval` objects.
+
+    Siena annotation files store **wall-clock** times (HH.MM.SS).  The EDF
+    file, however, starts at time 0.  We therefore convert each seizure onset/
+    offset to *seconds relative to the recording start* using the
+    ``Registration start time`` field, handling midnight roll-over:
+
+        relative = wall_clock_onset - registration_start
+        if relative < 0:          # seizure is after midnight
+            relative += 86400
     """
     text = path.read_text(encoding="utf-8", errors="replace")
     intervals: List[SeizureInterval] = []
 
     current_recording = None
-    onset = None
+    reg_start: float | None = None   # wall-clock seconds of registration start
+    onset_wall: float | None = None  # wall-clock seconds of seizure onset
 
     for line in text.splitlines():
         line = line.strip()
@@ -49,34 +59,66 @@ def parse_seizure_file(path: Path) -> List[SeizureInterval]:
         # Match "File name: PN00-1.edf"
         fname_match = re.match(r"File\s+name:\s*(.+)", line, re.IGNORECASE)
         if fname_match:
-            current_recording = fname_match.group(1).strip()
+            raw_name = fname_match.group(1).strip()
+            # Fix known Siena annotation typo: "PNO6" (letter O) → "PN06" (zero)
+            raw_name = re.sub(r"\bPNO(\d)", r"PN0\1", raw_name)
+            current_recording = raw_name
+            reg_start = None      # reset per recording block
+            onset_wall = None
             continue
 
         # Match "Registration start time: HH.MM.SS"
-        # (we don't need the absolute time, seizure times are relative)
+        reg_match = re.match(r"Registration\s+start\s+time:\s*(\S+)", line, re.IGNORECASE)
+        if reg_match:
+            try:
+                reg_start = _time_to_seconds(reg_match.group(1))
+            except (ValueError, IndexError):
+                reg_start = None
+            continue
 
-        # Match "Seizure start time: HH.MM.SS" or "Start time: ..."
+        # Match "Seizure start time: HH.MM.SS" (or "Start time: …")
         onset_match = re.match(
             r"(?:Seizure\s+)?[Ss]tart\s+time:\s*(\S+)", line, re.IGNORECASE
         )
         if onset_match:
-            onset = _time_to_seconds(onset_match.group(1))
+            try:
+                onset_wall = _time_to_seconds(onset_match.group(1))
+            except (ValueError, IndexError):
+                onset_wall = None
             continue
 
-        # Match "Seizure end time: HH.MM.SS" or "End time: ..."
+        # Match "Seizure end time: HH.MM.SS" (or "End time: …")
         offset_match = re.match(
             r"(?:Seizure\s+)?[Ee]nd\s+time:\s*(\S+)", line, re.IGNORECASE
         )
-        if offset_match and onset is not None:
-            offset = _time_to_seconds(offset_match.group(1))
+        if offset_match and onset_wall is not None:
+            try:
+                offset_wall = _time_to_seconds(offset_match.group(1))
+            except (ValueError, IndexError):
+                onset_wall = None
+                continue
+
+            # Convert wall-clock → relative-to-recording-start
+            if reg_start is not None:
+                onset_rel = onset_wall - reg_start
+                if onset_rel < 0:       # seizure crosses midnight
+                    onset_rel += 86400
+                offset_rel = offset_wall - reg_start
+                if offset_rel < onset_rel:  # offset also crosses midnight
+                    offset_rel += 86400
+            else:
+                # Fallback: no registration start found — treat as relative
+                onset_rel = onset_wall
+                offset_rel = offset_wall
+
             intervals.append(
                 SeizureInterval(
                     recording=current_recording or path.stem,
-                    onset_sec=onset,
-                    offset_sec=offset,
+                    onset_sec=onset_rel,
+                    offset_sec=offset_rel,
                 )
             )
-            onset = None
+            onset_wall = None
             continue
 
     return intervals

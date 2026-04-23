@@ -55,10 +55,16 @@ def label_detection(
 
     n = len(starts_sec)
     labels = np.zeros(n, dtype=np.int32)
+
+    def _matches(sz_recording: str, stem: str) -> bool:
+        """Fuzzy match: stem in recording name, or recording name (without ext) in stem."""
+        rec = sz_recording.replace(".edf", "").replace(".EDF", "")
+        return stem in sz_recording or rec in stem or stem.startswith(rec.rstrip("-"))
+
     for i, win_start in enumerate(starts_sec):
         win_end = win_start + win_sec
         for sz in seizures:
-            if edf_stem not in sz.recording:
+            if not _matches(sz.recording, edf_stem):
                 continue
             overlap_start = max(win_start, sz.onset_sec)
             overlap_end = min(win_end, sz.offset_sec)
@@ -107,7 +113,11 @@ def label_prediction(
     n = len(starts_sec)
     labels = np.zeros(n, dtype=np.int32)
 
-    rec_seizures = [sz for sz in seizures if edf_stem in sz.recording]
+    def _matches(sz_recording: str, stem: str) -> bool:
+        rec = sz_recording.replace(".edf", "").replace(".EDF", "")
+        return stem in sz_recording or rec in stem or stem.startswith(rec.rstrip("-"))
+
+    rec_seizures = [sz for sz in seizures if _matches(sz.recording, edf_stem)]
 
     for i, win_start in enumerate(starts_sec):
         win_end = win_start + win_sec
