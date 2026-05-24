@@ -1,6 +1,7 @@
-name: siena
+name: siena_sop_merged
 root: data/raw/siena/siena-scalp-eeg-database-1.0.0
 processed_dir: data/processed
+target_key: y_sop15             # label column for SOP=15 min prediction
 sampling_rate_hz: 512          # native Siena EDF sampling rate
 target_rate_hz: 256            # downsample target (Papers 01 (Ingolfsson et al. — BrainFuseNet), 02 (Busia et al. — EEGformer), 06 (Jana & Mukherjee — NSGA-II), 10 (Li et al. — CNN-Informer), 22 (Dokare & Gupta — DWT-SVM))
 

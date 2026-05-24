@@ -24,8 +24,7 @@ import mindspore.nn as nn
 from mindspore import Tensor
 
 from auras.models.base import BaseSeizureModel
-from auras.models.mobilevit_1d import _TransformerBlock1D
-from auras.models.modules import ResDSBlock
+from auras.models.modules import ResDSBlock, _TransformerBlock1D
 
 
 class CNNBiLSTMAttn(BaseSeizureModel):

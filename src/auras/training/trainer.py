@@ -33,12 +33,10 @@ def _load_configs():
 
     cfg = OmegaConf.load(args.config)
 
-    # Load sub-configs if they are string references
-    if isinstance(cfg.get("data"), str):
-        cfg.data = OmegaConf.load(f"configs/data/{cfg.data}.yaml")
-    elif cfg.get("defaults"):
+    # Load sub-configs referenced from the defaults list
+    if cfg.get("defaults"):
         for default in cfg.defaults:
-            if isinstance(default, dict):
+            if OmegaConf.is_dict(default):
                 for key, val in default.items():
                     if key != "_self_":
                         sub_cfg = OmegaConf.load(f"configs/{key}/{val}.yaml")
@@ -52,6 +50,14 @@ def _load_configs():
     # Apply CLI overrides like model=resnet1d
     cli_cfg = OmegaConf.from_dotlist(args.overrides)
     cfg = OmegaConf.merge(cfg, cli_cfg)
+
+    # Re-resolve sub-configs if CLI overrides replaced them with strings
+    if isinstance(cfg.get("data"), str):
+        cfg.data = OmegaConf.load(f"configs/data/{cfg.data}.yaml")
+    if isinstance(cfg.get("model"), str):
+        cfg.model = OmegaConf.load(f"configs/model/{cfg.model}.yaml")
+    if isinstance(cfg.get("training"), str):
+        cfg.training = OmegaConf.load(f"configs/training/{cfg.training}.yaml")
 
     return cfg, args.mode, args.checkpoint
 

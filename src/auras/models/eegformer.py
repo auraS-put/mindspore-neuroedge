@@ -29,7 +29,7 @@ import mindspore.nn as nn
 from mindspore import Parameter, Tensor
 
 from auras.models.base import BaseSeizureModel
-from auras.models.mobilevit_1d import _TransformerBlock1D
+from auras.models.modules import _TransformerBlock1D
 
 
 class EEGformer(BaseSeizureModel):

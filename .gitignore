@@ -31,17 +31,17 @@ exports/*
 *.ckpt
 *.mindir
 
+# Papers and docs (PDFs, extracted text, notes)
+docs/
+extract_papers.py
+
 # Env
 .env
 
 # Monitoring
 wandb/
 
-# OS/editor18
+# OS/editor
 .DS_Store
 .vscode/
 .idea/
-
-# Paper notes
-docs/
-extract_papers.py
