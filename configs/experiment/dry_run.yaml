@@ -19,7 +19,7 @@ datasets: [siena_sop5, siena_sop10, siena_sop15]
 
 # One representative per architecture family
 models:
-  - cnn_baseline        # plain CNN — fastest baseline
+  - pyramidal_cnn_bilstm  # fastest model — ideal for pipeline smoke-test
 
 # Classical ML baselines (DWT features → sklearn)
 classical_models:

@@ -34,7 +34,7 @@ obs_output_path: obs://auras-experiments/runs/
 #   CPU dev:    modelarts.vm.cpu.8u        (8 vCPU, 32 GB RAM)
 #   GPU:        modelarts.vm.gpu.p3        (1× V100)
 #   Ascend:     modelarts.vm.ascend.910    (1× Ascend 910B, 32 GB HBM)
-train_instance: modelarts.vm.cpu.8u
+train_instance: modelarts.vm.gpu.p3
 
 # Docker image — leave empty to use the built-in MindSpore 2.8 image
 # Set to a custom OBS path if you need extra packages:

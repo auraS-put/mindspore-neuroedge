@@ -1,13 +1,12 @@
-"""Sprint 2 — New Architectures: comprehensive test suite.
+"""Architecture test suite.
 
-Tests cover every component implemented in Sprint 2:
+Tests cover:
   1.  Shared modules:    DepthwiseSeparableConv1D, ResDSBlock,
                          ChannelAttention1D, ProbSparseAttention,
                          AttentionDistilling, InformerEncoderLayer
-  2.  Sprint-2 models:   CNNBaseline, CNNBiLSTM, CNNBiLSTMAttn,
-                         CAMCNNBiLSTM, EEGformer, CNNInformer,
-                         UltraLightCNN, PyramidalCNNBiLSTM
-  3.  All 15 models (7 existing + 8 new) registered in factory
+  2.  Active models:     CNNBiLSTMAttn, CAMCNNBiLSTM, EEGformer,
+                         CNNInformer, PyramidalCNNBiLSTM
+  3.  All 5 models registered in factory
   4.  factory.create_model integration via YAML configs
   5.  Parameter budget constraints for lightweight models
   6.  Output shape contract: (B, C, T=1024) → (B, 2)
@@ -173,42 +172,6 @@ class TestInformerEncoderLayer:
 # 2. Sprint-2 Model Forward Passes
 # =============================================================================
 
-class TestCNNBaseline:
-
-    def test_output_shape(self):
-        from auras.models.cnn_baseline import CNNBaseline
-        m = CNNBaseline()
-        assert m(_dummy()).shape == (B, 2)
-
-    def test_custom_channels(self):
-        from auras.models.cnn_baseline import CNNBaseline
-        m = CNNBaseline(conv_channels=(16, 32, 64), kernels=(5, 3, 3))
-        assert m(_dummy()).shape == (B, 2)
-
-    def test_num_classes(self):
-        from auras.models.cnn_baseline import CNNBaseline
-        m = CNNBaseline(num_classes=3)
-        assert m(_dummy()).shape == (B, 3)
-
-    def test_param_count(self):
-        from auras.models.cnn_baseline import CNNBaseline
-        m = CNNBaseline()
-        assert m.count_params() < 200_000, "CNNBaseline should be <200 K params"
-
-
-class TestCNNBiLSTM:
-
-    def test_output_shape(self):
-        from auras.models.cnn_bilstm import CNNBiLSTM
-        m = CNNBiLSTM()
-        assert m(_dummy()).shape == (B, 2)
-
-    def test_different_hidden_size(self):
-        from auras.models.cnn_bilstm import CNNBiLSTM
-        m = CNNBiLSTM(hidden_size=32)
-        assert m(_dummy()).shape == (B, 2)
-
-
 class TestCNNBiLSTMAttn:
 
     def test_output_shape(self):
@@ -272,27 +235,6 @@ class TestCNNInformer:
         assert m(_dummy()).shape == (B, 2)
 
 
-class TestUltraLightCNN:
-
-    def test_output_shape(self):
-        from auras.models.ultralight_cnn import UltraLightCNN
-        m = UltraLightCNN()
-        assert m(_dummy()).shape == (B, 2)
-
-    def test_param_budget(self):
-        """Must stay under 10 K trainable parameters."""
-        from auras.models.ultralight_cnn import UltraLightCNN
-        m = UltraLightCNN()
-        n = m.count_params()
-        assert n < 10_000, f"UltraLightCNN exceeded budget: {n} params"
-
-    def test_single_channel(self):
-        from auras.models.ultralight_cnn import UltraLightCNN
-        m = UltraLightCNN(num_channels=1)
-        x = Tensor(np.random.randn(B, 1, T).astype(np.float32))
-        assert m(x).shape == (B, 2)
-
-
 class TestPyramidalCNNBiLSTM:
 
     def test_output_shape(self):
@@ -322,13 +264,11 @@ class TestPyramidalCNNBiLSTM:
 class TestModelRegistry:
 
     ALL_MODELS = [
-        # Sprint 1 / existing
-        "lstm", "bilstm", "resnet1d", "mobilenetv3_1d",
-        "ghostnet1d", "mobilevit_1d", "autoformer",
-        # Sprint 2 — new
-        "cnn_baseline", "cnn_bilstm", "cnn_bilstm_attn",
-        "cam_cnn_bilstm", "eegformer", "cnn_informer",
-        "ultralight_cnn", "pyramidal_cnn_bilstm",
+        "cnn_bilstm_attn",
+        "cam_cnn_bilstm",
+        "eegformer",
+        "cnn_informer",
+        "pyramidal_cnn_bilstm",
     ]
 
     def test_all_models_registered(self):
@@ -339,7 +279,7 @@ class TestModelRegistry:
 
     def test_registry_count(self):
         from auras.models.factory import list_models
-        assert len(list_models()) >= 15
+        assert len(list_models()) == 5
 
 
 # =============================================================================
@@ -347,17 +287,6 @@ class TestModelRegistry:
 # =============================================================================
 
 class TestCreateModel:
-
-    def test_create_cnn_baseline_via_yaml(self):
-        from omegaconf import OmegaConf
-        from auras.models.factory import create_model
-        cfg = OmegaConf.create({
-            "arch": "cnn_baseline", "name": "cnn_baseline",
-            "conv_channels": [32, 64, 128], "kernels": [7, 5, 3],
-            "dropout": 0.2, "num_classes": 2,
-        })
-        m = create_model(cfg, num_channels=4)
-        assert m(_dummy()).shape == (B, 2)
 
     def test_create_eegformer_via_yaml(self):
         from omegaconf import OmegaConf
@@ -367,16 +296,6 @@ class TestCreateModel:
             "embed_dim": 128, "num_heads": 8, "patch_size": 5,
             "mlp_ratio": 2.0, "dropout": 0.1, "max_seq": 512,
             "num_classes": 2,
-        })
-        m = create_model(cfg, num_channels=4)
-        assert m(_dummy()).shape == (B, 2)
-
-    def test_create_ultralight_via_yaml(self):
-        from omegaconf import OmegaConf
-        from auras.models.factory import create_model
-        cfg = OmegaConf.create({
-            "arch": "ultralight_cnn", "name": "ultralight_cnn",
-            "dropout": 0.1, "num_classes": 2,
         })
         m = create_model(cfg, num_channels=4)
         assert m(_dummy()).shape == (B, 2)
@@ -399,28 +318,22 @@ class TestCreateModel:
 
 class TestParameterCounts:
 
-    def test_print_all_sprint2_params(self, capsys):
-        """Print param counts for all Sprint-2 models (for reference)."""
-        from auras.models.cnn_baseline import CNNBaseline
-        from auras.models.cnn_bilstm import CNNBiLSTM
+    def test_print_all_params(self, capsys):
+        """Print param counts for all active models."""
         from auras.models.cnn_bilstm_attn import CNNBiLSTMAttn
         from auras.models.cam_cnn_bilstm import CAMCNNBiLSTM
         from auras.models.eegformer import EEGformer
         from auras.models.cnn_informer import CNNInformer
-        from auras.models.ultralight_cnn import UltraLightCNN
         from auras.models.pyramidal_cnn_bilstm import PyramidalCNNBiLSTM
 
         models = [
-            ("cnn_baseline",         CNNBaseline()),
-            ("cnn_bilstm",           CNNBiLSTM()),
             ("cnn_bilstm_attn",      CNNBiLSTMAttn()),
             ("cam_cnn_bilstm",       CAMCNNBiLSTM()),
             ("eegformer",            EEGformer()),
             ("cnn_informer",         CNNInformer()),
-            ("ultralight_cnn",       UltraLightCNN()),
             ("pyramidal_cnn_bilstm", PyramidalCNNBiLSTM()),
         ]
-        print("\n--- Sprint-2 Parameter Counts ---")
+        print("\n--- Parameter Counts ---")
         for name, m in models:
             n = m.count_params()
             print(f"  {name:<25} {n:>10,} params")

@@ -159,7 +159,7 @@ def _build_optimizer(model, lr_schedule, cfg):
         return nn.SGD(model.trainable_params(), learning_rate=lr_schedule, weight_decay=wd, momentum=0.9)
 
 
-def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
+def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None, output_dir=None):
     """Manual training loop with gradient clipping and optional early stopping.
 
     Uses ``mindspore.value_and_grad`` for a fully-custom per-step loop so
@@ -175,6 +175,8 @@ def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
     val_iterator : callable, optional
         Zero-argument callable that returns a fresh batch iterator yielding
         ``(Tensor, Tensor)`` for validation.  Used for early stopping.
+    output_dir : Path, optional
+        Directory for saving periodic checkpoints (enables resume).
 
     Returns
     -------
@@ -197,10 +199,25 @@ def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
     best_val = -float("inf") if monitor_mode == "max" else float("inf")
     no_improve = 0
     best_epoch = 0
+    start_epoch = 0
+
+    # ── Resume from checkpoint if available ──────────────────────────
+    resume_path = Path(output_dir) / "train_state.ckpt" if output_dir else None
+    if resume_path and resume_path.exists():
+        state = ms.load_checkpoint(str(resume_path))
+        # Restore model params (filter out metadata keys)
+        param_dict = {k: v for k, v in state.items() if not k.startswith("__meta_")}
+        ms.load_param_into_net(model, param_dict, strict_load=False)
+        # Restore training state
+        start_epoch = int(state.get("__meta_epoch", ms.Tensor(0)).asnumpy())
+        best_val = float(state.get("__meta_best_val", ms.Tensor(best_val)).asnumpy())
+        best_epoch = int(state.get("__meta_best_epoch", ms.Tensor(0)).asnumpy())
+        no_improve = int(state.get("__meta_no_improve", ms.Tensor(0)).asnumpy())
+        print(f"  Resumed from epoch {start_epoch} (best_val={best_val:.4f} @ epoch {best_epoch})")
 
     import datetime
 
-    for epoch in range(cfg.epochs):
+    for epoch in range(start_epoch, cfg.epochs):
         model.set_train(True)
         epoch_loss = 0.0
         n_batches = 0
@@ -255,6 +272,21 @@ def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
         else:
             print(f"  [{ts}] Epoch {epoch + 1:>3}/{cfg.epochs}  loss={avg_loss:.4f}")
 
+        # ── Save training state for resume ───────────────────────────
+        if output_dir:
+            _save_dir = Path(output_dir)
+            _save_dir.mkdir(parents=True, exist_ok=True)
+            # Save all model params (including BN running stats) + metadata for resume
+            params_to_save = [{"name": p.name, "data": p} for p in model.get_parameters()]
+            params_to_save.append({"name": "__meta_epoch", "data": ms.Tensor(epoch + 1, ms.int32)})
+            params_to_save.append({"name": "__meta_best_val", "data": ms.Tensor(best_val, ms.float32)})
+            params_to_save.append({"name": "__meta_best_epoch", "data": ms.Tensor(best_epoch, ms.int32)})
+            params_to_save.append({"name": "__meta_no_improve", "data": ms.Tensor(no_improve, ms.int32)})
+            ms.save_checkpoint(params_to_save, str(_save_dir / "train_state.ckpt"))
+            # Also save best model separately
+            if val_iterator is not None and no_improve == 0:
+                ms.save_checkpoint(model, str(_save_dir / "best.ckpt"))
+
     return best_epoch
 
 
@@ -291,11 +323,14 @@ def train(cfg):
     npz_path = Path(cfg.data.processed_dir) / f"{cfg.data.name}.npz"
     val_idx_arr = None  # saved inside _build_datasets — re-derive if needed
 
-    _train_loop(model, loss_fn, optimizer, train_ds, cfg.training)
-
-    # Save final checkpoint
+    # Output directory (for checkpointing + final save)
     output_dir = Path(cfg.output_dir) / cfg.model.name
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    _train_loop(model, loss_fn, optimizer, train_ds, cfg.training, output_dir=output_dir)
+
+    # Save final checkpoint
+    ms.save_checkpoint(model, str(output_dir / "final.ckpt"))
     ms.save_checkpoint(model, str(output_dir / "final.ckpt"))
     print(f"Training complete. Checkpoint saved to {output_dir}")
 
