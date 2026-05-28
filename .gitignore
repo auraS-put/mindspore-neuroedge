@@ -5,6 +5,7 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+.venv39/
 
 # Tooling
 .pytest_cache/
@@ -30,6 +31,12 @@ exports/*
 !exports/example/
 *.ckpt
 *.mindir
+
+# Wheels (binary dependencies for cloud)
+wheels/
+
+# Benchmark output (checkpoints, downloaded from OBS)
+experiments/benchmark_output/
 
 # Papers and docs (PDFs, extracted text, notes)
 docs/
