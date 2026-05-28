@@ -1,99 +1,98 @@
-"""Check the status of a ModelArts training job.
+"""Check, list, or terminate cloud training jobs.
 
 Usage:
-    python scripts/check_job.py <job_id>             # status + metrics
-    python scripts/check_job.py <job_id> --events    # include timeline
-    python scripts/check_job.py --list               # list recent jobs
+    python scripts/check_job.py <job_id>
+    python scripts/check_job.py <job_id> --terminate
+    python scripts/check_job.py --provider aws <job_id>
+    python scripts/check_job.py --list
 """
-import os, sys, requests, json
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-ak = os.environ['HUAWEI_AK']
-sk = os.environ['HUAWEI_SK']
-region = os.environ['HUAWEI_REGION']
-project_id = os.environ['MODELARTS_PROJECT_ID']
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# Auth
-iam_url = f'https://iam.{region}.myhuaweicloud.com/v3/auth/tokens'
-payload = {'auth': {'identity': {'methods': ['hw_ak_sk'], 'hw_ak_sk': {'access': {'key': ak}, 'secret': {'key': sk}}}, 'scope': {'project': {'id': project_id}}}}
-resp = requests.post(iam_url, json=payload, timeout=15)
-token = resp.headers['X-Subject-Token']
-headers = {'X-Auth-Token': token}
-ma_url = f'https://modelarts.{region}.myhuaweicloud.com'
+from scripts.cloud import get_provider
+from scripts.cloud.base import JobPhase
 
 
-def list_jobs():
-    r = requests.get(f'{ma_url}/v2/{project_id}/training-jobs',
-                     headers=headers, params={'limit': 10, 'order': 'desc'}, timeout=30)
-    jobs = r.json().get('items', [])
-    print(f"{'ID':<40} {'Phase':<12} {'Duration':<10} {'Name'}")
-    print("-" * 90)
-    for j in jobs:
-        jid = j['metadata']['id']
-        name = j['metadata']['name']
-        phase = j['status']['phase']
-        dur = j['status'].get('duration', 0) // 1000
-        print(f"{jid:<40} {phase:<12} {dur:>6}s    {name}")
+def display_status(status):
+    """Pretty-print job status."""
+    print(f"Job:      {status.job_id}")
+    print(f"Phase:    {status.phase.value}")
+    print(f"Duration: {status.duration_s}s ({status.duration_s // 60}m {status.duration_s % 60}s)")
+    if status.flavor:
+        print(f"Flavor:   {status.flavor}")
+    if status.flavor_detail:
+        print(f"          {status.flavor_detail}")
 
-
-def check_job(job_id, show_events=False):
-    r = requests.get(f'{ma_url}/v2/{project_id}/training-jobs/{job_id}', headers=headers, timeout=30)
-    result = r.json()
-
-    status = result['status']
-    phase = status['phase']
-    duration = status.get('duration', 0) // 1000
-    spec = result.get('spec', {}).get('resource', {})
-    flavor = spec.get('flavor_id', '?')
-    flavor_info = spec.get('flavor_detail', {}).get('flavor_info', {})
-
-    print(f"Job:      {job_id}")
-    print(f"Phase:    {phase}")
-    print(f"Duration: {duration}s ({duration//60}m {duration%60}s)")
-    print(f"Flavor:   {flavor}")
-    if flavor_info:
-        cpu = flavor_info.get('cpu', {})
-        mem = flavor_info.get('memory', {})
-        gpu = flavor_info.get('gpu', {})
-        disk = flavor_info.get('disk', {})
-        print(f"          CPU: {cpu.get('core_num','?')} cores | RAM: {mem.get('size','?')} GiB | "
-              f"GPU: {gpu.get('unit_num','0')}x {gpu.get('product_name','')} {gpu.get('memory','')} | "
-              f"Disk: {disk.get('size','?')} GB")
-
-    # Metrics
-    metrics = status.get('metrics_statistics')
-    if metrics:
+    if status.metrics:
+        m = status.metrics
         print(f"\n--- Resource Metrics (avg/max) ---")
-        cpu_m = metrics.get('cpu_usage', {})
-        mem_m = metrics.get('mem_usage', {})
-        gpu_m = metrics.get('gpu', {})
-        print(f"  CPU:      {cpu_m.get('average',0):.1f}% / {cpu_m.get('max',0):.1f}%")
-        print(f"  RAM:      {mem_m.get('average',0):.1f}% / {mem_m.get('max',0):.1f}%")
-        if gpu_m:
-            print(f"  GPU util: {gpu_m.get('util',{}).get('average',0):.1f}% / {gpu_m.get('util',{}).get('max',0):.1f}%")
-            print(f"  GPU mem:  {gpu_m.get('mem_usage',{}).get('average',0):.1f}% / {gpu_m.get('mem_usage',{}).get('max',0):.1f}%")
+        print(f"  CPU:      {m.cpu_avg:.1f}% / {m.cpu_max:.1f}%")
+        print(f"  RAM:      {m.ram_avg:.1f}% / {m.ram_max:.1f}%")
+        if m.gpu_util_avg >= 0:
+            print(f"  GPU util: {m.gpu_util_avg:.1f}% / {m.gpu_util_max:.1f}%")
+            print(f"  GPU mem:  {m.gpu_mem_avg:.1f}% / {m.gpu_mem_max:.1f}%")
 
-    # Events timeline
-    if show_events or phase not in ('Completed', 'Running'):
-        r2 = requests.get(f'{ma_url}/v2/{project_id}/training-jobs/{job_id}/events',
-                         headers=headers, params={'order': 'asc', 'limit': 50}, timeout=15)
-        if r2.status_code == 200:
-            events = r2.json().get('events', [])
-            print(f"\n--- Timeline ({len(events)} events) ---")
-            for e in events:
-                t = e['time'][11:19]
-                print(f"  {t}  [{e['source']:4s}] {e['message']}")
+    if status.events:
+        print(f"\n--- Timeline ({len(status.events)} events) ---")
+        for e in status.events:
+            t = e.get("time", "")
+            if len(t) > 11:
+                t = t[11:19]
+            src = e.get("source", "?")
+            msg = e.get("message", "")
+            print(f"  {t}  [{src:4s}] {msg}")
 
 
-if __name__ == '__main__':
-    if '--list' in sys.argv:
-        list_jobs()
+def list_jobs(provider):
+    """List recent jobs."""
+    jobs = provider.training().list_jobs(limit=10)
+    print(f"{'ID':<45} {'Phase':<12} {'Duration':<10} {'Name'}")
+    print("-" * 95)
+    for j in jobs:
+        dur = f"{j.duration_s}s"
+        print(f"{j.job_id:<45} {j.phase.value:<12} {dur:<10} {j.flavor}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Check cloud training job status")
+    parser.add_argument(
+        "--provider", "-p",
+        default=os.environ.get("CLOUD_PROVIDER", "huawei"),
+        choices=["huawei", "aws"],
+    )
+    parser.add_argument("job_id", nargs="?", help="Job ID to check")
+    parser.add_argument("--list", action="store_true", help="List recent jobs")
+    parser.add_argument("--terminate", action="store_true", help="Terminate the job")
+    parser.add_argument("--events", action="store_true", help="Show event timeline")
+    args = parser.parse_args()
+
+    provider = get_provider(args.provider)
+
+    if args.list:
+        list_jobs(provider)
+    elif args.job_id:
+        if args.terminate:
+            provider.training().terminate(args.job_id)
+            print(f"Terminate requested for {args.job_id}")
+        else:
+            status = provider.training().get_status(args.job_id)
+            display_status(status)
     else:
-        job_id = next((a for a in sys.argv[1:] if not a.startswith('-')), None)
-        if not job_id:
-            print("Usage: python scripts/check_job.py <job_id> [--events] [--list]")
-            sys.exit(1)
-        show_events = '--events' in sys.argv
-        check_job(job_id, show_events)
+        parser.print_help()
+        sys.exit(1)
+
+    provider.close()
+
+
+if __name__ == "__main__":
+    main()

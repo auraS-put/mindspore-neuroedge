@@ -25,7 +25,9 @@ print("=== cloud_boot_benchmark.py start ===", flush=True)
 print(f"Python: {sys.version}", flush=True)
 print(f"CWD: {os.getcwd()}", flush=True)
 
-ON_CLOUD = os.path.exists("/home/ma-user")
+ON_CLOUD = os.path.exists("/home/ma-user") or os.path.exists("/opt/ml")
+ON_MODELARTS = os.path.exists("/home/ma-user")
+ON_SAGEMAKER = os.path.exists("/opt/ml")
 SESSION_ID = os.environ.get("SESSION_ID", datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
 
 # Model → training config mapping (paper-verified hyperparameters)
@@ -46,7 +48,7 @@ ALL_MODELS = [
 ]
 
 # ── Install dependencies ─────────────────────────────────────────────────
-if ON_CLOUD:
+if ON_MODELARTS:
     code_dir = "/home/ma-user/modelarts/user-job-dir/code"
 
     print("[1/3] Installing from bundled wheels...", flush=True)
@@ -84,6 +86,22 @@ if ON_CLOUD:
         tf.extractall(extract_to)
     os.chdir(extract_to)
     sys.path.insert(0, extract_to)
+
+elif ON_SAGEMAKER:
+    # SageMaker: custom Docker image has MindSpore pre-installed
+    # Code is available at /opt/ml/code/ (uploaded via source_dir)
+    code_dir = os.environ.get("SM_MODULE_DIR", "/opt/ml/code")
+    extract_to = "/opt/ml/code"
+
+    # Extract code tarball if present
+    tarball = os.path.join(code_dir, "auras_code.tar.gz")
+    if os.path.exists(tarball):
+        print("[1/2] Extracting code tarball...", flush=True)
+        with tarfile.open(tarball) as tf:
+            tf.extractall(extract_to)
+    os.chdir(extract_to)
+    sys.path.insert(0, extract_to)
+    print("[2/2] SageMaker environment ready.", flush=True)
 else:
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     os.chdir(repo_root)
@@ -105,12 +123,19 @@ n_epochs = int(os.environ.get("EPOCHS", "5"))
 models_str = os.environ.get("MODELS", ",".join(ALL_MODELS))
 model_names = [m.strip() for m in models_str.split(",") if m.strip()]
 
-if ON_CLOUD:
+if ON_MODELARTS:
     data_dir = os.environ.get("data", "/home/ma-user/modelarts/inputs/data_0")
+elif ON_SAGEMAKER:
+    data_dir = os.environ.get("SM_CHANNEL_TRAINING", "/opt/ml/input/data/training")
 else:
     data_dir = "data/processed"
 
-output_base = "/tmp/benchmark_output" if ON_CLOUD else "experiments/benchmark_output"
+if ON_MODELARTS:
+    output_base = "/tmp/benchmark_output"
+elif ON_SAGEMAKER:
+    output_base = os.environ.get("SM_MODEL_DIR", "/opt/ml/model")
+else:
+    output_base = "experiments/benchmark_output"
 os.makedirs(output_base, exist_ok=True)
 
 print(f"\n{'='*60}", flush=True)
@@ -262,23 +287,30 @@ progress = {
 
 
 def upload_progress():
-    """Upload progress.json to OBS for live monitoring."""
+    """Upload progress.json to cloud storage for live monitoring."""
     progress_path = os.path.join(output_base, "progress.json")
     with open(progress_path, "w") as f:
         json.dump(progress, f, indent=2, default=str)
-    if ON_CLOUD:
+    if ON_MODELARTS:
         import moxing as mox
         obs_path = f"obs://auras-experiments/output/benchmark_{SESSION_ID}/progress.json"
         mox.file.copy(progress_path, obs_path)
+    elif ON_SAGEMAKER:
+        # SageMaker auto-syncs SM_MODEL_DIR to S3 on completion;
+        # for live monitoring, use SM output channel
+        pass
 
 
 def upload_checkpoint(model_name, filename):
-    """Upload a checkpoint file to OBS."""
-    if ON_CLOUD:
+    """Upload a checkpoint file to cloud storage."""
+    if ON_MODELARTS:
         import moxing as mox
         local = os.path.join(output_base, model_name, filename)
         obs_path = f"obs://auras-experiments/output/benchmark_{SESSION_ID}/{model_name}/{filename}"
         mox.file.copy(local, obs_path)
+    elif ON_SAGEMAKER:
+        # Checkpoints are in SM_MODEL_DIR, auto-uploaded to S3 on completion
+        pass
 
 
 # ── Training loop per model ──────────────────────────────────────────────
@@ -520,12 +552,14 @@ progress["total_time_s"] = total_time
 # Save final comprehensive results
 upload_progress()
 
-# Upload entire output directory to OBS
-if ON_CLOUD:
+# Upload entire output directory to cloud storage
+if ON_MODELARTS:
     import moxing as mox
     obs_output = f"obs://auras-experiments/output/benchmark_{SESSION_ID}/"
     mox.file.copy_parallel(output_base, obs_output)
     print(f"\nAll results uploaded to {obs_output}", flush=True)
+elif ON_SAGEMAKER:
+    print(f"\nResults at {output_base} — will sync to S3 on job completion.", flush=True)
 
 print(f"\n{'='*60}", flush=True)
 print(f"BENCHMARK COMPLETE", flush=True)
