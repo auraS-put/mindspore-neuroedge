@@ -89,14 +89,15 @@ if ON_MODELARTS:
 
 elif ON_SAGEMAKER:
     # SageMaker: custom Docker image has MindSpore pre-installed
-    # Code is available at /opt/ml/code/ (uploaded via source_dir)
-    code_dir = os.environ.get("SM_MODULE_DIR", "/opt/ml/code")
+    # Code is at /opt/ml/input/data/code/ (from code channel)
+    code_dir = os.environ.get("SM_CHANNEL_CODE", "/opt/ml/input/data/code")
     extract_to = "/opt/ml/code"
 
     # Extract code tarball if present
     tarball = os.path.join(code_dir, "auras_code.tar.gz")
     if os.path.exists(tarball):
         print("[1/2] Extracting code tarball...", flush=True)
+        os.makedirs(extract_to, exist_ok=True)
         with tarfile.open(tarball) as tf:
             tf.extractall(extract_to)
     os.chdir(extract_to)
@@ -113,7 +114,13 @@ import numpy as np
 print(f"MindSpore version: {ms.__version__}", flush=True)
 
 if ON_CLOUD:
-    ms.set_context(mode=ms.GRAPH_MODE, device_target="GPU")
+    # Auto-detect GPU vs CPU
+    try:
+        ms.set_context(mode=ms.GRAPH_MODE, device_target="GPU")
+        print("Device: GPU", flush=True)
+    except RuntimeError:
+        ms.set_context(mode=ms.GRAPH_MODE, device_target="CPU")
+        print("Device: CPU (GPU not available)", flush=True)
 else:
     ms.set_context(mode=ms.PYNATIVE_MODE)
 

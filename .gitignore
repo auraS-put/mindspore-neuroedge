@@ -44,6 +44,8 @@ extract_papers.py
 
 # Env
 .env
+*_credentials.csv
+*_accessKeys.csv
 
 # Monitoring
 wandb/

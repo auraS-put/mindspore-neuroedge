@@ -53,7 +53,15 @@ class SageMakerTraining(TrainingService):
         # Parse S3 paths from config
         # data_path format: s3://bucket/prefix/
         # output_path format: s3://bucket/prefix/
-        hyperparameters = {k: str(v) for k, v in config.env_vars.items()}
+        # Filter out internal keys from hyperparameters
+        hyperparameters = {
+            k: str(v) for k, v in config.env_vars.items()
+            if not k.startswith("__")
+        }
+
+        # Derive code S3 URI from data_path (sibling directory)
+        # e.g., s3://bucket/data/ → s3://bucket/code/
+        code_s3_uri = config.data_path.rsplit("data/", 1)[0] + "code/"
 
         training_params = {
             "TrainingJobName": job_name,
@@ -72,7 +80,17 @@ class SageMakerTraining(TrainingService):
                             "S3DataDistributionType": "FullyReplicated",
                         }
                     },
-                }
+                },
+                {
+                    "ChannelName": "code",
+                    "DataSource": {
+                        "S3DataSource": {
+                            "S3DataType": "S3Prefix",
+                            "S3Uri": code_s3_uri,
+                            "S3DataDistributionType": "FullyReplicated",
+                        }
+                    },
+                },
             ],
             "OutputDataConfig": {"S3OutputPath": config.output_path},
             "ResourceConfig": {
@@ -80,7 +98,7 @@ class SageMakerTraining(TrainingService):
                 "InstanceType": instance_type,
                 "VolumeSizeInGB": 50,
             },
-            "StoppingCondition": {"MaxRuntimeInSeconds": 86400},  # 24h max
+            "StoppingCondition": {"MaxRuntimeInSeconds": config.max_runtime_s},
             "HyperParameters": hyperparameters,
         }
 

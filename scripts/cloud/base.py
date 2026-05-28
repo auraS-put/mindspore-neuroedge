@@ -55,6 +55,7 @@ class JobConfig:
     flavor: str  # instance type identifier
     env_vars: dict[str, str] = field(default_factory=dict)
     framework: str = "mindspore"  # framework identifier
+    max_runtime_s: int = 3600  # safety cap: kill job after this many seconds (1h default)
 
 
 class ObjectStore(ABC):

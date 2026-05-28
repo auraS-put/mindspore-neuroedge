@@ -25,17 +25,17 @@ from scripts.cloud import get_provider, JobConfig
 
 DEFAULT_FLAVORS = {
     "huawei": "modelarts.vm.gpu.v100",
-    "aws": "ml.p3.2xlarge",
+    "aws": "ml.g4dn.xlarge",
 }
 
 DEFAULT_DATA_PATHS = {
     "huawei": "/auras-experiments/data/",
-    "aws": "s3://auras-experiments/data/",
+    "aws": lambda: f"s3://{os.environ.get('AWS_S3_BUCKET', 'auras-experiments')}/data/",
 }
 
 DEFAULT_OUTPUT_PATHS = {
     "huawei": "/auras-experiments/output/",
-    "aws": "s3://auras-experiments/output/",
+    "aws": lambda: f"s3://{os.environ.get('AWS_S3_BUCKET', 'auras-experiments')}/output/",
 }
 
 
@@ -86,14 +86,20 @@ def main():
         "--benchmark", action="store_true",
         help="Use benchmark boot script (multi-model)",
     )
+    parser.add_argument(
+        "--max-runtime", type=int, default=3600,
+        help="Max job runtime in seconds before auto-kill (default: 3600 = 1h)",
+    )
     args = parser.parse_args()
 
     os.chdir(os.path.join(os.path.dirname(__file__), ".."))
 
     provider = get_provider(args.provider)
     flavor = args.flavor or DEFAULT_FLAVORS[args.provider]
-    data_path = args.data_path or DEFAULT_DATA_PATHS[args.provider]
-    output_path = args.output_path or DEFAULT_OUTPUT_PATHS[args.provider]
+    data_path_default = DEFAULT_DATA_PATHS[args.provider]
+    output_path_default = DEFAULT_OUTPUT_PATHS[args.provider]
+    data_path = args.data_path or (data_path_default() if callable(data_path_default) else data_path_default)
+    output_path = args.output_path or (output_path_default() if callable(output_path_default) else output_path_default)
 
     boot_script = (
         "scripts/cloud_boot_benchmark.py" if args.benchmark
@@ -122,6 +128,7 @@ def main():
         output_path=output_path,
         flavor=flavor,
         env_vars=env_vars,
+        max_runtime_s=args.max_runtime,
     )
 
     job_id = provider.training().submit_job(config)
