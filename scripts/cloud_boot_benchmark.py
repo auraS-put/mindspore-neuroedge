@@ -32,19 +32,16 @@ SESSION_ID = os.environ.get("SESSION_ID", datetime.datetime.now().strftime("%Y%m
 
 # Model → training config mapping (paper-verified hyperparameters)
 MODEL_TRAINING_MAP = {
-    "cnn_bilstm_attn": "conv_snn",           # Paper 18: AdamW, LR=1e-3, batch=64, OneCycleLR
-    "cam_cnn_bilstm": "cam_cnn_bilstm",       # Paper 19/20: Adam, LR=1e-3, batch=32, ReduceLROnPlateau
-    "pyramidal_cnn_bilstm": "lightweight",     # Paper 04: Adam, LR=2e-5, batch=32, cosine
-    "cnn_informer": "cnn_informer",           # Paper 10: Adam, LR=1e-4, batch=32, cosine
-    "eegformer": "eegformer",                 # Paper 02: Adam, LR=5e-5, batch=16, cosine
+    "multiscale_cnn": "multiscale_cnn",       # Paper 12: Focal loss, Adam, LR=1e-3, batch=64, cosine
+    "cnn_bilstm_attn": "conv_snn",           # Paper 18: AdamW, LR=1e-3, batch=64, OneCycleLR, SSWCE
+    "cnn_informer": "cnn_informer",           # Paper 10: Adam, LR=1e-4, batch=32, cosine, Focal
+    "pyramidal_cnn_bilstm": "lightweight",   # Paper 04: Adam, LR=2e-5, batch=32, cosine, WCE
 }
 
 ALL_MODELS = [
+    "multiscale_cnn",
     "cnn_bilstm_attn",
-    "cam_cnn_bilstm",
     "pyramidal_cnn_bilstm",
-    "cnn_informer",
-    "eegformer",
 ]
 
 # ── Install dependencies ─────────────────────────────────────────────────
@@ -114,12 +111,13 @@ import numpy as np
 print(f"MindSpore version: {ms.__version__}", flush=True)
 
 if ON_CLOUD:
-    # Auto-detect GPU vs CPU
+    # Use PYNATIVE_MODE — GRAPH_MODE in MindSpore causes OOM due to
+    # pre-allocation of full computation graph memory (4GB+ for LSTM/attention).
     try:
-        ms.set_context(mode=ms.GRAPH_MODE, device_target="GPU")
-        print("Device: GPU", flush=True)
+        ms.set_context(mode=ms.PYNATIVE_MODE, device_target="GPU")
+        print("Device: GPU (PYNATIVE)", flush=True)
     except RuntimeError:
-        ms.set_context(mode=ms.GRAPH_MODE, device_target="CPU")
+        ms.set_context(mode=ms.PYNATIVE_MODE, device_target="CPU")
         print("Device: CPU (GPU not available)", flush=True)
 else:
     ms.set_context(mode=ms.PYNATIVE_MODE)
@@ -166,7 +164,7 @@ data_cfg.name = "siena_sop_merged"
 if run_mode == "full":
     data_cfg.dry_run_max_windows = None
 else:
-    data_cfg.dry_run_max_windows = 500
+    data_cfg.dry_run_max_windows = int(os.environ.get("MAX_WINDOWS", "500"))
 
 proc = psutil.Process()
 print(f"Memory before data load: {proc.memory_info().rss / 1024**2:.0f} MB", flush=True)
@@ -184,14 +182,14 @@ print(f"  Total windows: {len(y_full):,}", flush=True)
 print(f"  Positive: {int(y_full.sum()):,}  Negative: {int(len(y_full) - y_full.sum()):,}", flush=True)
 
 # ── Build train/val/test splits ONCE ────────────────────────────────────
-from sklearn.model_selection import train_test_split
-from auras.training.evaluator import evaluate_epoch
+from sklearn.model_selection import GroupShuffleSplit
 
 seed = 42
 np.random.seed(seed)
 
 n_full = len(y_full)
 max_w = data_cfg.get("dry_run_max_windows", n_full) or n_full
+subjects_full = preloaded["subjects"] if "subjects" in preloaded else None
 abs_indices = np.arange(n_full)
 if len(abs_indices) > max_w:
     rng_cap = np.random.default_rng(42)
@@ -199,17 +197,36 @@ if len(abs_indices) > max_w:
     abs_indices.sort()
 
 y = y_full[abs_indices]
+subjects = subjects_full[abs_indices] if subjects_full is not None else None
 n = len(y)
 pos_indices = np.arange(n)
 
 test_size = data_cfg.split.get("test_size", 0.2)
 val_size = data_cfg.split.get("val_size", 0.1)
 
-pos_train_val, pos_test = train_test_split(
-    pos_indices, test_size=test_size, stratify=y, random_state=seed)
-relative_val = val_size / (1 - test_size)
-pos_train, pos_val = train_test_split(
-    pos_train_val, test_size=relative_val, stratify=y[pos_train_val], random_state=seed)
+if subjects is not None and len(np.unique(subjects)) >= 4:
+    # Subject-aware split: no patient leakage between train/val/test
+    gss_test = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+    train_val_pos, test_pos = next(gss_test.split(pos_indices, y, groups=subjects))
+
+    relative_val = val_size / (1 - test_size)
+    gss_val = GroupShuffleSplit(n_splits=1, test_size=relative_val, random_state=seed)
+    train_pos, val_pos = next(gss_val.split(train_val_pos, y[train_val_pos],
+                                             groups=subjects[train_val_pos]))
+    pos_train = train_val_pos[train_pos]
+    pos_val = train_val_pos[val_pos]
+    pos_test = test_pos
+    print(f"  Split method: subject-aware (GroupShuffleSplit)", flush=True)
+    print(f"  Test subjects: {np.unique(subjects[pos_test])}", flush=True)
+else:
+    # Fallback for dry_run with very few subjects
+    from sklearn.model_selection import train_test_split
+    pos_train_val, pos_test = train_test_split(
+        pos_indices, test_size=test_size, stratify=y, random_state=seed)
+    relative_val = val_size / (1 - test_size)
+    pos_train, pos_val = train_test_split(
+        pos_train_val, test_size=relative_val, stratify=y[pos_train_val], random_state=seed)
+    print(f"  Split method: stratified (fallback — insufficient subjects)", flush=True)
 
 train_idx = abs_indices[pos_train]
 val_idx = abs_indices[pos_val]
@@ -322,6 +339,7 @@ def upload_checkpoint(model_name, filename):
 
 # ── Training loop per model ──────────────────────────────────────────────
 from auras.models.factory import create_model
+from auras.training.evaluator import evaluate_epoch
 from auras.training.losses import build_loss
 from auras.training.lr_schedulers import build_lr_schedule
 from auras.utils.reproducibility import seed_everything
@@ -329,7 +347,7 @@ from auras.utils.reproducibility import seed_everything
 import mindspore.ops as ops
 
 n_channels = len(data_cfg.channels.selected)
-window_len_s = float(data_cfg.get("window_len_s", 4.0))
+window_len_s = float(data_cfg.window.seconds)
 
 upload_progress()
 
@@ -437,14 +455,22 @@ for model_idx, model_name in enumerate(model_names):
                 loss, grads = grad_fn(X, label)
                 grads = ops.clip_by_global_norm(grads, clip_norm)
                 optimizer(grads)
-                epoch_loss += float(loss.asnumpy())
+                batch_loss = float(loss.asnumpy())
+                epoch_loss += batch_loss
                 n_batches += 1
 
-                if n_batches % log_every == 0:
-                    ts = datetime.datetime.now().strftime("%H:%M:%S")
-                    print(f"  [{ts}] {model_name} Epoch {epoch+1}/{n_epochs} "
-                          f"step {n_batches} loss={float(loss.asnumpy()):.4f} "
-                          f"avg={epoch_loss/n_batches:.4f}", flush=True)
+                # Progress bar
+                elapsed = time.time() - epoch_start
+                eta = (elapsed / n_batches) * (steps_per_epoch - n_batches) if n_batches < steps_per_epoch else 0
+                pct = min(100, n_batches * 100 // steps_per_epoch)
+                bar_len = 20
+                filled = bar_len * n_batches // steps_per_epoch
+                bar = "█" * filled + "░" * (bar_len - filled)
+                print(f"\r  [{bar}] {pct:3d}% | batch {n_batches}/{steps_per_epoch} | "
+                      f"loss={batch_loss:.4f} avg={epoch_loss/n_batches:.4f} | "
+                      f"ETA {eta:.0f}s", end="", flush=True)
+
+            print("", flush=True)  # newline after progress bar
 
             # Free train dataset before evaluation
             del train_ds
@@ -459,8 +485,17 @@ for model_idx, model_name in enumerate(model_names):
                                           shuffle=False, num_workers=num_workers)
             val_result = evaluate_epoch(model, val_ds.create_tuple_iterator(),
                                         window_length_s=window_len_s)
-            del val_ds
+            # Compute val loss
+            val_loss_total = 0.0
+            val_n = 0
+            val_ds2 = build_sliced_dataset(val_X, val_y, batch_size,
+                                           shuffle=False, num_workers=num_workers)
+            for X, label in val_ds2.create_tuple_iterator():
+                val_loss_total += float(loss_fn(model(X), label).asnumpy())
+                val_n += 1
+            del val_ds, val_ds2
             gc.collect()
+            val_loss = val_loss_total / max(val_n, 1)
 
             val_recall = val_result.segment.recall
             val_f1 = val_result.segment.f1
@@ -481,22 +516,37 @@ for model_idx, model_name in enumerate(model_names):
                                            shuffle=False, num_workers=num_workers)
             test_result = evaluate_epoch(model, test_ds.create_tuple_iterator(),
                                          window_length_s=window_len_s)
-            del test_ds
+            # Compute test loss
+            test_loss_total = 0.0
+            test_n = 0
+            test_ds2 = build_sliced_dataset(test_X, test_y, batch_size,
+                                            shuffle=False, num_workers=num_workers)
+            for X, label in test_ds2.create_tuple_iterator():
+                test_loss_total += float(loss_fn(model(X), label).asnumpy())
+                test_n += 1
+            del test_ds, test_ds2
             gc.collect()
+            test_loss = test_loss_total / max(test_n, 1)
 
             # ── Log epoch results ────────────────────────────────────
             marker = " *BEST*" if improved else ""
             ts = datetime.datetime.now().strftime("%H:%M:%S")
             print(f"\n  [{ts}] {model_name} Epoch {epoch+1}/{n_epochs} DONE "
                   f"({epoch_time:.0f}s){marker}", flush=True)
-            print(f"    Train loss:      {avg_loss:.4f}", flush=True)
-            print(f"    Val  recall:     {val_recall:.4f}  f1={val_f1:.4f}  "
-                  f"FP/h={val_result.fp_per_hour:.2f}  SDR={val_result.seizure_detection_rate:.3f}", flush=True)
-            print(f"    Test recall:     {test_result.segment.recall:.4f}  "
-                  f"f1={test_result.segment.f1:.4f}  "
-                  f"FP/h={test_result.fp_per_hour:.2f}  "
-                  f"SDR={test_result.seizure_detection_rate:.3f}", flush=True)
-            print(f"    No-improve: {no_improve}/{patience}\n", flush=True)
+            print(f"  ┌─────────────┬──────────┬──────────┐", flush=True)
+            print(f"  │  Metric     │   Val    │   Test   │", flush=True)
+            print(f"  ├─────────────┼──────────┼──────────┤", flush=True)
+            print(f"  │ Loss        │ {val_loss:8.4f} │ {test_loss:8.4f} │", flush=True)
+            print(f"  │ Accuracy    │ {val_result.segment.accuracy:8.4f} │ {test_result.segment.accuracy:8.4f} │", flush=True)
+            print(f"  │ Recall      │ {val_result.segment.recall:8.4f} │ {test_result.segment.recall:8.4f} │", flush=True)
+            print(f"  │ Precision   │ {val_result.segment.precision:8.4f} │ {test_result.segment.precision:8.4f} │", flush=True)
+            print(f"  │ Specificity │ {val_result.segment.specificity:8.4f} │ {test_result.segment.specificity:8.4f} │", flush=True)
+            print(f"  │ F1          │ {val_result.segment.f1:8.4f} │ {test_result.segment.f1:8.4f} │", flush=True)
+            print(f"  ├─────────────┼──────────┼──────────┤", flush=True)
+            print(f"  │ FP/h        │ {val_result.fp_per_hour:8.2f} │ {test_result.fp_per_hour:8.2f} │", flush=True)
+            print(f"  │ SDR         │ {val_result.seizure_detection_rate:8.3f} │ {test_result.seizure_detection_rate:8.3f} │", flush=True)
+            print(f"  └─────────────┴──────────┴──────────┘", flush=True)
+            print(f"    Train loss: {avg_loss:.4f} | No-improve: {no_improve}/{patience}\n", flush=True)
 
             epoch_record = {
                 "epoch": epoch + 1,

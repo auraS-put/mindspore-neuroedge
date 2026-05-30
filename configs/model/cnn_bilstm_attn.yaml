@@ -6,7 +6,7 @@ stem_channels: 64
 lstm_hidden: 64
 num_heads: 4
 mlp_ratio: 2.0
-dropout: 0.1
+dropout: 0.3
 num_classes: 2
 
 # Best training settings (Paper 18 (Mehrabi et al. — ConvSNN) — ConvSNN recipe)

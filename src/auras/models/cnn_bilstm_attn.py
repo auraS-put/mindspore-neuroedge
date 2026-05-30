@@ -38,7 +38,8 @@ class CNNBiLSTMAttn(BaseSeizureModel):
         lstm_hidden: int = 64,
         num_heads: int = 4,
         mlp_ratio: float = 2.0,
-        dropout: float = 0.1,
+        dropout: float = 0.3,
+        temporal_pool: int = 8,
         **kwargs,
     ):
         super().__init__(num_classes=num_classes)
@@ -54,6 +55,8 @@ class CNNBiLSTMAttn(BaseSeizureModel):
             ResDSBlock(stem_channels, kernel_size=9, dropout=dropout),
             ResDSBlock(stem_channels, kernel_size=9, dropout=dropout),
         )
+        # Reduce T before LSTM+Attention (2048→256 with pool=8)
+        self.temporal_pool = nn.MaxPool1d(kernel_size=temporal_pool, stride=temporal_pool)
         self.lstm = nn.LSTM(
             input_size=stem_channels,
             hidden_size=lstm_hidden,
@@ -73,10 +76,11 @@ class CNNBiLSTMAttn(BaseSeizureModel):
     def construct(self, x: Tensor) -> Tensor:
         x = self.stem(x)                        # (B, 64, T)
         x = self.res_blocks(x)                  # (B, 64, T)
-        x = x.transpose(0, 2, 1)               # (B, T, 64)
-        output, _ = self.lstm(x)                # (B, T, 128)
+        x = self.temporal_pool(x)               # (B, 64, T//8)
+        x = x.transpose(0, 2, 1)               # (B, T//8, 64)
+        output, _ = self.lstm(x)                # (B, T//8, 128)
         # _TransformerBlock1D expects (T, B, dim)
-        x = output.transpose(1, 0, 2)           # (T, B, 128)
-        x = self.transformer(x)                 # (T, B, 128)
+        x = output.transpose(1, 0, 2)           # (T//8, B, 128)
+        x = self.transformer(x)                 # (T//8, B, 128)
         x = x.mean(axis=0)                      # (B, 128) — mean-pool over time
         return self.classifier(x)

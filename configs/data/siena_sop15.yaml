@@ -21,8 +21,8 @@ channels:
 # Paper 01 (Ingolfsson et al. — BrainFuseNet): 4 s @ 256 Hz on CHB-MIT
 # Paper 02 (Busia et al. — EEGformer):    8 s better for detection; 4 s used for prediction
 window:
-  seconds: 4                   # → 1024 samples @ 256 Hz
-  stride_seconds: 1            # 75% overlap (Papers 06 (Jana & Mukherjee — NSGA-II), 10 (Li et al. — CNN-Informer), 22 (Dokare & Gupta — DWT-SVM))
+  seconds: 8                   # → 2048 samples @ 256 Hz (Jana et al. validated for prediction)
+  stride_seconds: 2            # 75% overlap (Papers 06 (Jana & Mukherjee — NSGA-II), 10 (Li et al. — CNN-Informer), 22 (Dokare & Gupta — DWT-SVM))
 
 # --- signal preprocessing ----------------------------------------------------
 # Band-pass: 0.5–45 Hz (Papers 05 (Mazurek et al. — GAT), 06 (Jana & Mukherjee — NSGA-II))

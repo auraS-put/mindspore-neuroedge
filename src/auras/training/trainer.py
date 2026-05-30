@@ -104,21 +104,41 @@ def _build_datasets(cfg, preloaded: dict = None):
     # y and positional indices are now aligned: y[i] corresponds to abs_indices[i]
     y = y_full[abs_indices]
     n = len(y)
-    pos_indices = np.arange(n)   # 0..n-1 for splitting
 
-    # Simple stratified split on positional indices, then map back to absolute
-    from sklearn.model_selection import train_test_split
+    # Subject-aware split: no patient's windows appear in both train and test.
+    # This prevents data leakage from patient-specific EEG patterns.
+    from sklearn.model_selection import GroupShuffleSplit
 
     test_size = cfg.data.split.get("test_size", 0.2)
     val_size = cfg.data.split.get("val_size", 0.1)
 
-    pos_train_val, pos_test = train_test_split(
-        pos_indices, test_size=test_size, stratify=y, random_state=cfg.seed
-    )
-    relative_val = val_size / (1 - test_size)
-    pos_train, pos_val = train_test_split(
-        pos_train_val, test_size=relative_val, stratify=y[pos_train_val], random_state=cfg.seed
-    )
+    subjects_full = preloaded["subjects"] if "subjects" in preloaded else None
+    subjects = subjects_full[abs_indices] if subjects_full is not None else None
+
+    if subjects is not None and len(np.unique(subjects)) >= 4:
+        # Group-aware split by subject (no leakage)
+        gss_test = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=cfg.seed)
+        pos_indices = np.arange(n)
+        train_val_pos, test_pos = next(gss_test.split(pos_indices, y, groups=subjects))
+
+        relative_val = val_size / (1 - test_size)
+        gss_val = GroupShuffleSplit(n_splits=1, test_size=relative_val, random_state=cfg.seed)
+        train_pos, val_pos = next(gss_val.split(train_val_pos, y[train_val_pos],
+                                                 groups=subjects[train_val_pos]))
+        pos_train = train_val_pos[train_pos]
+        pos_val = train_val_pos[val_pos]
+        pos_test = test_pos
+    else:
+        # Fallback: stratified split (when no subject info or too few subjects)
+        from sklearn.model_selection import train_test_split
+        pos_indices = np.arange(n)
+        pos_train_val, pos_test = train_test_split(
+            pos_indices, test_size=test_size, stratify=y, random_state=cfg.seed
+        )
+        relative_val = val_size / (1 - test_size)
+        pos_train, pos_val = train_test_split(
+            pos_train_val, test_size=relative_val, stratify=y[pos_train_val], random_state=cfg.seed
+        )
 
     # Map back to absolute NPZ indices for the dataset loader
     train_idx = abs_indices[pos_train]

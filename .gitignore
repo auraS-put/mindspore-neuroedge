@@ -50,6 +50,21 @@ extract_papers.py
 # Monitoring
 wandb/
 
+# Notebooks — build artifacts & external libs
+notebooks/PlotNeuralNet/
+notebooks/*.aux
+notebooks/*.log
+notebooks/*.tex
+notebooks/*.pdf
+notebooks/*.png
+notebooks/eeg_*.png
+notebooks/eeg_ch*.png
+notebooks/cnn_bilstm_attn_graphviz
+notebooks/cnn_bilstm_attn_plotnn.py
+
+# OBS downloads
+obs_download/
+
 # OS/editor
 .DS_Store
 .vscode/

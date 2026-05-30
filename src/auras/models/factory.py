@@ -59,13 +59,17 @@ def create_model(cfg, num_channels: int = 4) -> BaseSeizureModel:
 
 # ── Lazy registration (import triggers decorator) ────────────────
 from auras.models.cnn_bilstm_attn import CNNBiLSTMAttn  # noqa: E402
+from auras.models.cnn_informer import CNNInformer  # noqa: E402
+from auras.models.multiscale_cnn import MultiScaleCNN  # noqa: E402
+
+# Keep legacy imports for backward compat (not used in benchmark)
 from auras.models.cam_cnn_bilstm import CAMCNNBiLSTM  # noqa: E402
 from auras.models.eegformer import EEGformer  # noqa: E402
-from auras.models.cnn_informer import CNNInformer  # noqa: E402
 from auras.models.pyramidal_cnn_bilstm import PyramidalCNNBiLSTM  # noqa: E402
 
 register("cnn_bilstm_attn")(CNNBiLSTMAttn)
+register("cnn_informer")(CNNInformer)
+register("multiscale_cnn")(MultiScaleCNN)
 register("cam_cnn_bilstm")(CAMCNNBiLSTM)
 register("eegformer")(EEGformer)
-register("cnn_informer")(CNNInformer)
 register("pyramidal_cnn_bilstm")(PyramidalCNNBiLSTM)

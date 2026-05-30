@@ -46,6 +46,7 @@ class CNNInformer(BaseSeizureModel):
         super().__init__(num_classes=num_classes)
 
         # CNN stem — 3 layers with ELU, all pad="same" to preserve T
+        # MaxPool(4) at end: T=2048→512 (matches max_len=512 in ProbSparse)
         self.cnn = nn.SequentialCell(
             nn.Conv1d(num_channels, 32, 3, pad_mode="same"),
             nn.ELU(),
@@ -53,6 +54,7 @@ class CNNInformer(BaseSeizureModel):
             nn.ELU(),
             nn.Conv1d(32, d_model, 3, pad_mode="same"),
             nn.ELU(),
+            nn.MaxPool1d(kernel_size=4, stride=4),
         )
 
         # Informer encoder stack (each layer halves T via distilling)

@@ -234,13 +234,20 @@ def prepare(cfg) -> None:  # noqa: C901 (acceptable complexity for a data pipeli
         # DWT preprocessing (optional)
         data = _apply_dwt(data, cfg)
 
-        # normalisation
-        data = _apply_normalization(data, norm_mode)
-
-        # windowing
+        # windowing (before normalization to avoid information leakage)
         windows = sliding_window(data, win_samples, stride_samples)
         if windows.shape[0] == 0:
             continue
+
+        # per-window normalisation (each window normalised independently)
+        if norm_mode == "zscore":
+            mean = windows.mean(axis=-1, keepdims=True)
+            std = windows.std(axis=-1, keepdims=True) + 1e-6
+            windows = (windows - mean) / std
+        elif norm_mode == "minmax":
+            w_min = windows.min(axis=-1, keepdims=True)
+            w_max = windows.max(axis=-1, keepdims=True)
+            windows = (windows - w_min) / (w_max - w_min + 1e-8)
 
         n_windows = windows.shape[0]
         starts_sec = np.array([
