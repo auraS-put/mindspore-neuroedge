@@ -306,7 +306,7 @@ def run_experiment(
     """
     exp = OmegaConf.load(exp_cfg_path)
     is_dry = exp.get("dry_run", {}).get("enabled", False)
-    training_cfg_name = "dry_run" if is_dry else "default"
+    default_training_cfg = "dry_run" if is_dry else "default"
 
     tag = "DRY-RUN" if is_dry else "FULL"
     print(f"\n{'═'*60}")
@@ -347,11 +347,24 @@ def run_experiment(
                 seed_everything(42 + rep)
                 print(f"\n─── DL: {model_name} / {dataset_name} (rep {rep + 1}) ───")
 
+                # Per-model training config (from training_overrides or default)
+                training_overrides = exp.get("training_overrides", {})
+                if model_name in training_overrides:
+                    training_cfg_name = training_overrides[model_name].get("config", default_training_cfg)
+                else:
+                    training_cfg_name = default_training_cfg
+
                 run_cfg = _build_run_cfg(
                     exp, dataset_name, model_name, rep,
                     data_dir, output_dir, training_cfg_name,
                 )
                 run_cfg = _apply_dry_run_caps(run_cfg, exp)
+
+                # Timing cap — limit epochs for cost estimation runs
+                timing_cap = exp.get("timing", {}).get("max_epochs", None)
+                if timing_cap is not None:
+                    run_cfg.training.epochs = min(run_cfg.training.epochs, timing_cap)
+
                 logger = _build_logger(run_cfg)
                 logger.log_config({"model": model_name, "dataset": dataset_name, "rep": rep})
 
@@ -378,8 +391,8 @@ def run_experiment(
             if classical:
                 print(f"\n─── Classical ML / {dataset_name} (rep {rep + 1}) ───")
                 run_cfg = _build_run_cfg(
-                    exp, dataset_name, "cnn_baseline", rep,
-                    data_dir, output_dir, training_cfg_name,
+                    exp, dataset_name, "cnn_bilstm_attn", rep,
+                    data_dir, output_dir, default_training_cfg,
                 )
                 run_cfg = _apply_dry_run_caps(run_cfg, exp)
                 logger = _build_logger(run_cfg)

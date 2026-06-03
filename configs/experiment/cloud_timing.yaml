@@ -1,0 +1,50 @@
+# =============================================================================
+# Cloud Timing Experiment
+#
+# Purpose: Run each model for 3 epochs with FULL training settings (same as
+# final training) to measure per-epoch wall-clock time on V100 GPU.
+# This lets us estimate total training cost before committing to full runs.
+#
+# Run:
+#   python scripts/run_experiment.py \
+#       --config configs/experiment/cloud_timing.yaml \
+#       --backend modelarts
+# =============================================================================
+
+name: cloud_timing
+
+datasets:
+  - siena_sop15        # Primary SOP setting
+
+# All 5 architectures with their paper-matched training configs
+models:
+  - cnn_bilstm_attn
+  - eegformer
+  - cnn_informer
+  - pyramidal_cnn_bilstm
+  - cam_cnn_bilstm
+
+# Map each model to its paper-verified training config
+training_overrides:
+  cnn_bilstm_attn:
+    config: conv_snn
+  eegformer:
+    config: eegformer
+  cnn_informer:
+    config: cnn_informer
+  pyramidal_cnn_bilstm:
+    config: lightweight
+  cam_cnn_bilstm:
+    config: cam_cnn_bilstm
+
+# Timing cap — only 3 epochs to estimate per-epoch cost
+timing:
+  max_epochs: 3
+  # Use full batch sizes and learning rates from paper configs
+  # (no overrides — we want realistic timings)
+
+cross_validation:
+  method: holdout              # single train/val split (fastest for timing)
+  val_fraction: 0.2
+
+repetitions: 1                 # single run per model (timing only)

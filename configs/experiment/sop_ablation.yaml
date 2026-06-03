@@ -34,15 +34,9 @@ datasets:
 
 # Full model set — compare all architectures across all SOP settings
 models:
-  - cnn_baseline
-  - cnn_bilstm
   - cnn_bilstm_attn
   - cam_cnn_bilstm
   - pyramidal_cnn_bilstm
-  - resnet1d
-  - ghostnet1d
-  - bilstm
-  - ultralight_cnn
   - eegformer
   - cnn_informer
 

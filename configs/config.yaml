@@ -1,12 +1,12 @@
 # ─────────────────────────────────────────────────────────────────
 # auraS — Default top-level configuration
 # Composed from sub-configs via Hydra:
-#   python -m auras.training.trainer data=siena model=ghostnet1d training=default
+#   python -m auras.training.trainer data=siena model=cnn_bilstm_attn training=conv_snn
 # ─────────────────────────────────────────────────────────────────
 defaults:
   - data: siena
-  - model: ghostnet1d
-  - training: default
+  - model: cnn_bilstm_attn
+  - training: conv_snn
   - _self_
 
 seed: 42

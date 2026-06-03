@@ -33,12 +33,10 @@ def _load_configs():
 
     cfg = OmegaConf.load(args.config)
 
-    # Load sub-configs if they are string references
-    if isinstance(cfg.get("data"), str):
-        cfg.data = OmegaConf.load(f"configs/data/{cfg.data}.yaml")
-    elif cfg.get("defaults"):
+    # Load sub-configs referenced from the defaults list
+    if cfg.get("defaults"):
         for default in cfg.defaults:
-            if isinstance(default, dict):
+            if OmegaConf.is_dict(default):
                 for key, val in default.items():
                     if key != "_self_":
                         sub_cfg = OmegaConf.load(f"configs/{key}/{val}.yaml")
@@ -52,6 +50,14 @@ def _load_configs():
     # Apply CLI overrides like model=resnet1d
     cli_cfg = OmegaConf.from_dotlist(args.overrides)
     cfg = OmegaConf.merge(cfg, cli_cfg)
+
+    # Re-resolve sub-configs if CLI overrides replaced them with strings
+    if isinstance(cfg.get("data"), str):
+        cfg.data = OmegaConf.load(f"configs/data/{cfg.data}.yaml")
+    if isinstance(cfg.get("model"), str):
+        cfg.model = OmegaConf.load(f"configs/model/{cfg.model}.yaml")
+    if isinstance(cfg.get("training"), str):
+        cfg.training = OmegaConf.load(f"configs/training/{cfg.training}.yaml")
 
     return cfg, args.mode, args.checkpoint
 
@@ -98,21 +104,41 @@ def _build_datasets(cfg, preloaded: dict = None):
     # y and positional indices are now aligned: y[i] corresponds to abs_indices[i]
     y = y_full[abs_indices]
     n = len(y)
-    pos_indices = np.arange(n)   # 0..n-1 for splitting
 
-    # Simple stratified split on positional indices, then map back to absolute
-    from sklearn.model_selection import train_test_split
+    # Subject-aware split: no patient's windows appear in both train and test.
+    # This prevents data leakage from patient-specific EEG patterns.
+    from sklearn.model_selection import GroupShuffleSplit
 
     test_size = cfg.data.split.get("test_size", 0.2)
     val_size = cfg.data.split.get("val_size", 0.1)
 
-    pos_train_val, pos_test = train_test_split(
-        pos_indices, test_size=test_size, stratify=y, random_state=cfg.seed
-    )
-    relative_val = val_size / (1 - test_size)
-    pos_train, pos_val = train_test_split(
-        pos_train_val, test_size=relative_val, stratify=y[pos_train_val], random_state=cfg.seed
-    )
+    subjects_full = preloaded["subjects"] if "subjects" in preloaded else None
+    subjects = subjects_full[abs_indices] if subjects_full is not None else None
+
+    if subjects is not None and len(np.unique(subjects)) >= 4:
+        # Group-aware split by subject (no leakage)
+        gss_test = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=cfg.seed)
+        pos_indices = np.arange(n)
+        train_val_pos, test_pos = next(gss_test.split(pos_indices, y, groups=subjects))
+
+        relative_val = val_size / (1 - test_size)
+        gss_val = GroupShuffleSplit(n_splits=1, test_size=relative_val, random_state=cfg.seed)
+        train_pos, val_pos = next(gss_val.split(train_val_pos, y[train_val_pos],
+                                                 groups=subjects[train_val_pos]))
+        pos_train = train_val_pos[train_pos]
+        pos_val = train_val_pos[val_pos]
+        pos_test = test_pos
+    else:
+        # Fallback: stratified split (when no subject info or too few subjects)
+        from sklearn.model_selection import train_test_split
+        pos_indices = np.arange(n)
+        pos_train_val, pos_test = train_test_split(
+            pos_indices, test_size=test_size, stratify=y, random_state=cfg.seed
+        )
+        relative_val = val_size / (1 - test_size)
+        pos_train, pos_val = train_test_split(
+            pos_train_val, test_size=relative_val, stratify=y[pos_train_val], random_state=cfg.seed
+        )
 
     # Map back to absolute NPZ indices for the dataset loader
     train_idx = abs_indices[pos_train]
@@ -153,7 +179,7 @@ def _build_optimizer(model, lr_schedule, cfg):
         return nn.SGD(model.trainable_params(), learning_rate=lr_schedule, weight_decay=wd, momentum=0.9)
 
 
-def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
+def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None, output_dir=None):
     """Manual training loop with gradient clipping and optional early stopping.
 
     Uses ``mindspore.value_and_grad`` for a fully-custom per-step loop so
@@ -169,6 +195,8 @@ def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
     val_iterator : callable, optional
         Zero-argument callable that returns a fresh batch iterator yielding
         ``(Tensor, Tensor)`` for validation.  Used for early stopping.
+    output_dir : Path, optional
+        Directory for saving periodic checkpoints (enables resume).
 
     Returns
     -------
@@ -191,10 +219,25 @@ def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
     best_val = -float("inf") if monitor_mode == "max" else float("inf")
     no_improve = 0
     best_epoch = 0
+    start_epoch = 0
+
+    # ── Resume from checkpoint if available ──────────────────────────
+    resume_path = Path(output_dir) / "train_state.ckpt" if output_dir else None
+    if resume_path and resume_path.exists():
+        state = ms.load_checkpoint(str(resume_path))
+        # Restore model params (filter out metadata keys)
+        param_dict = {k: v for k, v in state.items() if not k.startswith("__meta_")}
+        ms.load_param_into_net(model, param_dict, strict_load=False)
+        # Restore training state
+        start_epoch = int(state.get("__meta_epoch", ms.Tensor(0)).asnumpy())
+        best_val = float(state.get("__meta_best_val", ms.Tensor(best_val)).asnumpy())
+        best_epoch = int(state.get("__meta_best_epoch", ms.Tensor(0)).asnumpy())
+        no_improve = int(state.get("__meta_no_improve", ms.Tensor(0)).asnumpy())
+        print(f"  Resumed from epoch {start_epoch} (best_val={best_val:.4f} @ epoch {best_epoch})")
 
     import datetime
 
-    for epoch in range(cfg.epochs):
+    for epoch in range(start_epoch, cfg.epochs):
         model.set_train(True)
         epoch_loss = 0.0
         n_batches = 0
@@ -249,6 +292,21 @@ def _train_loop(model, loss_fn, optimizer, train_ds, cfg, *, val_iterator=None):
         else:
             print(f"  [{ts}] Epoch {epoch + 1:>3}/{cfg.epochs}  loss={avg_loss:.4f}")
 
+        # ── Save training state for resume ───────────────────────────
+        if output_dir:
+            _save_dir = Path(output_dir)
+            _save_dir.mkdir(parents=True, exist_ok=True)
+            # Save all model params (including BN running stats) + metadata for resume
+            params_to_save = [{"name": p.name, "data": p} for p in model.get_parameters()]
+            params_to_save.append({"name": "__meta_epoch", "data": ms.Tensor(epoch + 1, ms.int32)})
+            params_to_save.append({"name": "__meta_best_val", "data": ms.Tensor(best_val, ms.float32)})
+            params_to_save.append({"name": "__meta_best_epoch", "data": ms.Tensor(best_epoch, ms.int32)})
+            params_to_save.append({"name": "__meta_no_improve", "data": ms.Tensor(no_improve, ms.int32)})
+            ms.save_checkpoint(params_to_save, str(_save_dir / "train_state.ckpt"))
+            # Also save best model separately
+            if val_iterator is not None and no_improve == 0:
+                ms.save_checkpoint(model, str(_save_dir / "best.ckpt"))
+
     return best_epoch
 
 
@@ -285,11 +343,14 @@ def train(cfg):
     npz_path = Path(cfg.data.processed_dir) / f"{cfg.data.name}.npz"
     val_idx_arr = None  # saved inside _build_datasets — re-derive if needed
 
-    _train_loop(model, loss_fn, optimizer, train_ds, cfg.training)
-
-    # Save final checkpoint
+    # Output directory (for checkpointing + final save)
     output_dir = Path(cfg.output_dir) / cfg.model.name
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    _train_loop(model, loss_fn, optimizer, train_ds, cfg.training, output_dir=output_dir)
+
+    # Save final checkpoint
+    ms.save_checkpoint(model, str(output_dir / "final.ckpt"))
     ms.save_checkpoint(model, str(output_dir / "final.ckpt"))
     print(f"Training complete. Checkpoint saved to {output_dir}")
 

@@ -7,8 +7,8 @@
 # =============================================================================
 
 epochs: 150
-batch_size: 32
-learning_rate: 5.0e-4
+batch_size: 16
+learning_rate: 5.0e-5
 weight_decay: 1.0e-4
 optimizer: adam
 

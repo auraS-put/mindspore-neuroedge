@@ -20,7 +20,7 @@ scheduler:
   min_lr: 1.0e-7
 
 loss:
-  name: weighted_ce
+  name: focal
   class_weights: auto
   focal_gamma: 2.0
   label_smoothing: 0.0

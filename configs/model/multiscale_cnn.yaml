@@ -1,0 +1,17 @@
+name: multiscale_cnn
+arch: multiscale_cnn
+
+# Architecture — Multi-Scale Dilated CNN (Paper [12] Gao et al. 2022)
+# 3 temporal branches capturing different EEG rhythm scales
+branch_channels: 32
+temporal_kernels: [32, 64, 128]   # ~125ms, ~250ms, ~500ms @ 256 Hz
+pool_size: 4
+cls_channels: 64
+dropout: 0.1
+num_classes: 2
+
+# Best training settings (Paper [12]):
+# Loss: Focal (γ=2, handles 5.9% class imbalance)
+# optimizer: Adam  lr: 1.0e-3  batch: 64
+# lr_schedule: cosine with warmup
+# Post-processing: 60s causal moving average + 30min refractory period

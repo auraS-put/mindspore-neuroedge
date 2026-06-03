@@ -247,3 +247,30 @@ class InformerEncoderLayer(nn.Cell):
         x = self.norm1(x + self.attn(x))    # post-norm (original Informer)
         x = self.norm2(x + self.ffn(x))
         return self.distilling(x)            # (B, T//2, d_model)
+
+
+# ── Transformer Block (standard pre-norm) ────────────────────────
+
+class _TransformerBlock1D(nn.Cell):
+    """Standard Transformer encoder block (self-attention + FFN)."""
+
+    def __init__(self, dim: int, num_heads: int, mlp_ratio: float = 2.0, dropout: float = 0.1):
+        super().__init__()
+        self.norm1 = nn.LayerNorm([dim])
+        self.attn = nn.MultiheadAttention(dim, num_heads, dropout=dropout)
+        self.norm2 = nn.LayerNorm([dim])
+        self.ffn = nn.SequentialCell(
+            nn.Dense(dim, int(dim * mlp_ratio)),
+            nn.GELU(approximate=False),
+            nn.Dropout(p=dropout),
+            nn.Dense(int(dim * mlp_ratio), dim),
+            nn.Dropout(p=dropout),
+        )
+
+    def construct(self, x: Tensor) -> Tensor:
+        # x: (seq_len, B, dim)
+        normed = self.norm1(x)
+        attn_out, _ = self.attn(normed, normed, normed)
+        x = x + attn_out
+        x = x + self.ffn(self.norm2(x))
+        return x

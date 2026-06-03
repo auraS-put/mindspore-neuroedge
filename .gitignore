@@ -5,6 +5,7 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+.venv39/
 
 # Tooling
 .pytest_cache/
@@ -31,17 +32,40 @@ exports/*
 *.ckpt
 *.mindir
 
+# Wheels (binary dependencies for cloud)
+wheels/
+
+# Benchmark output (checkpoints, downloaded from OBS)
+experiments/benchmark_output/
+
+# Papers and docs (PDFs, extracted text, notes)
+docs/
+extract_papers.py
+
 # Env
 .env
+*_credentials.csv
+*_accessKeys.csv
 
 # Monitoring
 wandb/
 
-# OS/editor18
+# Notebooks — build artifacts & external libs
+notebooks/PlotNeuralNet/
+notebooks/*.aux
+notebooks/*.log
+notebooks/*.tex
+notebooks/*.pdf
+notebooks/*.png
+notebooks/eeg_*.png
+notebooks/eeg_ch*.png
+notebooks/cnn_bilstm_attn_graphviz
+notebooks/cnn_bilstm_attn_plotnn.py
+
+# OBS downloads
+obs_download/
+
+# OS/editor
 .DS_Store
 .vscode/
 .idea/
-
-# Paper notes
-docs/
-extract_papers.py

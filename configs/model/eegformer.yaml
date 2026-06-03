@@ -14,5 +14,5 @@ num_classes: 2
 # optimizer: Adam  lr: 5.0e-5  batch: 16   ← Paper 02 LR=5e-5 (not 5e-4)
 # phase1: subject-independent pre-training (100 epochs)
 # phase2: subject-specific fine-tuning (50 epochs)
-# Paper 02 used 8s windows (2048 samples); we use 4s (1024) — 8s > 4s per ablation
+# Paper 02 used 8s windows (2048 samples); we now also use 8s (2048) per Jana et al. validation
 # Architecture uses 2× Conv1D patch embedding layers as in Paper 02

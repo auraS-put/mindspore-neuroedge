@@ -4,11 +4,10 @@ The three files (siena_sop5, siena_sop10, siena_sop15) share identical X and
 subjects arrays — only the preictal ``y`` labels differ.  This script creates:
 
     data/processed/siena_sop_merged.npz
-        X          (N, 4, 1024)  float32   — shared signal windows
+        X          (N, 4, 2048)  float32   — shared signal windows (8s @ 256 Hz)
         subjects   (N,)          int32     — subject IDs
         y_sop5     (N,)          int32     — preictal labels, SOP = 5 min
         y_sop10    (N,)          int32     — preictal labels, SOP = 10 min
-        y_sop15    (N,)          int32     — preictal labels, SOP = 15 min
 
     data/processed/siena_sop_merged.json  — combined metadata
 
@@ -24,7 +23,6 @@ import json
 from pathlib import Path
 
 import numpy as np
-from joblib import Parallel, delayed
 
 
 def main() -> None:
@@ -41,7 +39,6 @@ def main() -> None:
     VARIANTS = [
         ("y_sop5",  "siena_sop5",  5),
         ("y_sop10", "siena_sop10", 10),
-        ("y_sop15", "siena_sop15", 15),
     ]
 
     print("Loading SOP variant datasets …")
@@ -80,7 +77,7 @@ def main() -> None:
             meta_by_sop[sop] = json.load(open(json_path))
 
     # Build merged metadata
-    base_meta = meta_by_sop[15] if 15 in meta_by_sop else next(iter(meta_by_sop.values()))
+    base_meta = meta_by_sop[10] if 10 in meta_by_sop else next(iter(meta_by_sop.values()))
     merged_meta = {
         "dataset": "siena_sop_merged",
         "dataset_cfg": "configs/data/siena_sop_merged.yaml",
@@ -100,7 +97,6 @@ def main() -> None:
         "label_keys": {
             "y_sop5":  {"sop_minutes": 5,  "positive": int(label_arrays["y_sop5"].sum())},
             "y_sop10": {"sop_minutes": 10, "positive": int(label_arrays["y_sop10"].sum())},
-            "y_sop15": {"sop_minutes": 15, "positive": int(label_arrays["y_sop15"].sum())},
         },
         "labeling_common": {
             "mode":                   base_meta.get("labeling", {}).get("mode", "prediction"),
@@ -110,30 +106,12 @@ def main() -> None:
         },
     }
 
-    # Precompute DWT features (200-dim per window) — stored as X_dwt
-    print("\nComputing DWT features (parallelised) …", flush=True)
-    from auras.data.preprocess import dwt_features  # noqa: PLC0415
-
-    n_windows = len(X)
-    batch = 1000
-
-    def _feat_batch(start: int) -> np.ndarray:
-        end = min(start + batch, n_windows)
-        return np.stack([dwt_features(X[i]) for i in range(start, end)], axis=0)
-
-    results = Parallel(n_jobs=-1, verbose=5)(
-        delayed(_feat_batch)(s) for s in range(0, n_windows, batch)
-    )
-    X_dwt = np.concatenate(results, axis=0)  # (N, 200)
-    print(f"X_dwt shape: {X_dwt.shape}  dtype: {X_dwt.dtype}")
-
     # Save merged NPZ
     out_npz = proc / "siena_sop_merged.npz"
     print(f"\nSaving {out_npz} …", end=" ", flush=True)
     np.savez(
         str(out_npz),
         X=X,
-        X_dwt=X_dwt,
         subjects=subjects,
         **label_arrays,
     )
@@ -147,7 +125,7 @@ def main() -> None:
 
     print("\nMerge complete:")
     print(f"  {out_npz.name}  ({size_gb:.2f} GB)")
-    print(f"  Keys: X, X_dwt, subjects, y_sop5, y_sop10, y_sop15")
+    print(f"  Keys: X, subjects, y_sop5, y_sop10")
     for sop_key, info in merged_meta["label_keys"].items():
         pos = info["positive"]
         print(f"    {sop_key}: {pos:,} positive ({pos/merged_meta['samples']*100:.1f}%)")

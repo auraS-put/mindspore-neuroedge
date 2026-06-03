@@ -1,6 +1,7 @@
-name: siena
+name: siena_sop_merged
 root: data/raw/siena/siena-scalp-eeg-database-1.0.0
 processed_dir: data/processed
+target_key: y_sop10             # label column for SOP=10 min prediction (preictal = 15-5min before onset)
 sampling_rate_hz: 512          # native Siena EDF sampling rate
 target_rate_hz: 256            # downsample target (Papers 01 (Ingolfsson et al. — BrainFuseNet), 02 (Busia et al. — EEGformer), 06 (Jana & Mukherjee — NSGA-II), 10 (Li et al. — CNN-Informer), 22 (Dokare & Gupta — DWT-SVM))
 
@@ -15,13 +16,14 @@ channels:
   max_channels: 4
 
 # --- windowing ---------------------------------------------------------------
-# Paper 10 (Li et al. — CNN-Informer): 4 s / 1024 samples — best for prediction task
+# Paper 06 (Jana & Mukherjee — NSGA-II): 8 s @ 256 Hz = 2048 samples — "sufficient for efficient prediction"
+# Paper 10 (Li et al. — CNN-Informer): 4 s / 1024 samples
 # Paper 22 (Dokare & Gupta — DWT-SVM):      4 s @ 256 Hz = our primary baseline window
 # Paper 01 (Ingolfsson et al. — BrainFuseNet): 4 s @ 256 Hz on CHB-MIT
 # Paper 02 (Busia et al. — EEGformer):    8 s better for detection; 4 s used for prediction
 window:
-  seconds: 4                   # → 1024 samples @ 256 Hz
-  stride_seconds: 1            # 75% overlap (Papers 06 (Jana & Mukherjee — NSGA-II), 10 (Li et al. — CNN-Informer), 22 (Dokare & Gupta — DWT-SVM))
+  seconds: 8                   # → 2048 samples @ 256 Hz (Jana et al. validated for prediction)
+  stride_seconds: 2            # 75% overlap (Papers 06 (Jana & Mukherjee — NSGA-II), 10 (Li et al. — CNN-Informer), 22 (Dokare & Gupta — DWT-SVM))
 
 # --- signal preprocessing ----------------------------------------------------
 # Band-pass: 0.5–45 Hz (Papers 05 (Mazurek et al. — GAT), 06 (Jana & Mukherjee — NSGA-II))
@@ -50,7 +52,7 @@ preprocessing:
 labeling:
   mode: prediction             # detection | prediction
   overlap_fraction: 0.20       # fraction of window overlapping ictal → label 1 (Paper 18 (Mehrabi et al. — ConvSNN))
-  sop_minutes: 15              # seizure occurrence period length for prediction mode
+  sop_minutes: 10              # seizure occurrence period → preictal = [onset-15min, onset-5min]
   sph_minutes: 5               # seizure prediction horizon (clinical gap)
   postictal_gap_minutes: 15    # post-ictal exclusion window (Paper 02 (Busia et al. — EEGformer))
 
